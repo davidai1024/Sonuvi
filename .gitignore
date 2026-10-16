@@ -1,0 +1,15 @@
+.DS_Store
+build/
+*.app/
+*.zip
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+Voice/
+Usage.json
+ready.json
+Resources/uv
