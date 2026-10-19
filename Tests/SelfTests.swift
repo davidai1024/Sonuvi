@@ -33,6 +33,22 @@ func runSelfTests() {
     let topScreen = NSRect(x: 0, y: 1080, width: 1280, height: 800)
     let topPoint = WindowGeometry.origin(near: NSPoint(x: 1200, y: 1870), size: NSSize(width: 510, height: 650), visible: topScreen)
     check(topScreen.contains(NSRect(origin: topPoint, size: NSSize(width: 510, height: 650))), "Upper display clamp")
+    let reverseCapture = CaptureGeometry.selection(from: CGPoint(x: 350, y: 450), to: CGPoint(x: 50, y: 100))
+    check(reverseCapture == CGRect(x: 50, y: 100, width: 300, height: 350), "Capture supports reverse drag")
+    check(CaptureGeometry.displayRect(reverseCapture, primaryTop: 1080) == CGRect(x: 50, y: 630, width: 300, height: 350), "Capture flips AppKit coordinates once")
+    check(CaptureGeometry.displayRect(CGRect(x: -1800, y: -80, width: 500, height: 200), primaryTop: 1080) == CGRect(x: -1800, y: 960, width: 500, height: 200), "Capture preserves negative display origin")
+    check(CaptureGeometry.displayRect(CGRect(x: 50, y: 1200, width: 500, height: 200), primaryTop: 1080).minY == -320, "Capture supports display above primary")
+    check(CaptureGeometry.selection(from: .zero, to: .zero).isEmpty, "Click without drag is empty capture")
+    MainActor.assumeIsolated {
+        let model = AppModel(); model.previewMode = true
+        var cancelled = 0
+        model.cancelOCR = { cancelled += 1; model.ocrBusy = false; model.ocrRecognizing = false }
+        model.ocrBusy = true; model.ocrRecognizing = true
+        model.source = "New input while recognition is pending"
+        check(cancelled == 1 && !model.ocrBusy && !model.ocrRecognizing, "Editing invalidates pending OCR")
+        model.cancel()
+        check(cancelled == 1, "Idle cancellation does not retrigger capture")
+    }
     let shortcuts = [ShortcutSpec.translate, .read, .ocr]
     check(Set(shortcuts.map { "\($0.keyCode):\($0.modifiers)" }).count == 3, "Default shortcuts unique")
     func key(_ code: Int, _ flags: NSEvent.ModifierFlags, _ chars: String) -> NSEvent {
@@ -44,6 +60,71 @@ func runSelfTests() {
     check(ShortcutSpec.from(key(kVK_ANSI_T, [], "t")) == nil, "Bare key rejected")
     check(ShortcutSpec.from(key(kVK_ANSI_T, [.shift], "T")) == nil, "Shift-only shortcut rejected")
     MainActor.assumeIsolated {
+        let suite = "SonuviOnboardingTest-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let onboarding = OnboardingState(defaults: defaults)
+        check(!onboarding.completed && onboarding.step == .welcome, "Fresh install begins with onboarding")
+        onboarding.go(.voice)
+        check(OnboardingState(defaults: defaults).step == .voice, "Interrupted onboarding resumes its saved page")
+        onboarding.preparePermissionReturn()
+        let resumed = OnboardingState(defaults: defaults)
+        check(resumed.step == .permissions && resumed.awaitingPermissionReturn, "Permission restart returns to authorization page")
+        check(!resumed.completed, "Authorization return never silently completes onboarding")
+        check(!OnboardingState.mayContinue(.permissions, accessibility: true, screen: false, shortcuts: true, voice: true, api: true), "Both required permissions gate Continue")
+        check(OnboardingState.mayContinue(.permissions, accessibility: true, screen: true, shortcuts: false, voice: false, api: false), "Permission readiness is independent of optional API")
+        check(!OnboardingState.mayContinue(.shortcuts, accessibility: true, screen: true, shortcuts: false, voice: true, api: true), "Conflicting shortcuts cannot advance")
+        check(!OnboardingState.mayContinue(.voice, accessibility: true, screen: true, shortcuts: true, voice: false, api: true), "Missing local voice blocks voice step")
+        resumed.go(.shortcuts)
+        check(!resumed.awaitingPermissionReturn && resumed.step == .shortcuts, "Only explicit navigation advances past permission page")
+        resumed.finish()
+        check(OnboardingState(defaults: defaults).completed, "Completion is persisted across launches")
+        defaults.set("preserved-voice", forKey: "voice")
+        resumed.restart()
+        check(resumed.completed && resumed.replaying && resumed.step == .welcome, "Replay starts at welcome without erasing completed setup")
+        check(OnboardingState(defaults: defaults).replaying, "Interrupted replay persists across launches")
+        resumed.cancelReplay()
+        check(resumed.completed && !resumed.replaying && !OnboardingState(defaults: defaults).replaying, "Replay can exit back to Settings")
+        resumed.restart(); resumed.finish()
+        check(!resumed.replaying && resumed.completed && defaults.string(forKey: "voice") == "preserved-voice", "Finishing replay preserves user settings")
+        let runtime = RuntimeManager()
+        runtime.ready = true; runtime.status = "已取消，可随时重试"
+        runtime.finishPreparation(succeeded: false, cancelled: true)
+        check(runtime.displayStatus == "模型已就绪，可离线朗读" && !runtime.installationFailed && runtime.operationNotice == "已取消本次操作，现有模型仍可使用。", "Canceled operation does not contradict usable model status")
+        runtime.ready = false; runtime.finishPreparation(succeeded: false, cancelled: false)
+        check(runtime.installationFailed && runtime.displayStatus == "本地朗读尚未准备好", "Failed setup offers repair without claiming readiness")
+        runtime.ready = true; runtime.finishPreparation(succeeded: false, cancelled: false)
+        check(runtime.displayStatus == "模型已就绪，可离线朗读" && runtime.operationNotice == "本次修复未完成，现有模型仍可使用。", "Failed repair preserves existing readiness")
+        runtime.finishPreparation(succeeded: true, cancelled: false)
+        check(runtime.operationNotice.isEmpty && !runtime.installationFailed, "Successful preparation clears old failure messages")
+        check(VoiceCatalog.all.count == 28 && Set(VoiceCatalog.all.map(\.id)).count == 28, "All English voices are exposed exactly once")
+        check(VoiceCatalog.all.filter { $0.id.hasPrefix("a") }.count == 20 && VoiceCatalog.all.filter { $0.id.hasPrefix("b") }.count == 8, "American and British voice totals match model")
+        check(AppLanguage.system.resolved(preferred: ["zh-Hans-CN", "en"]) == "zh-Hans", "System language follows Chinese")
+        check(AppLanguage.system.resolved(preferred: ["en-US", "zh-Hans"]) == "en", "System language follows first preferred English")
+        check(AppLanguage.system.resolved(preferred: ["ja-JP", "en"]) == "en", "Unsupported system language falls back to English")
+        check(AppLanguage.chinese.resolved(preferred: ["en"]) == "zh-Hans", "Explicit Chinese overrides system")
+        check(AppLanguage.english.resolved(preferred: ["zh-Hans"]) == "en", "Explicit English overrides system")
+        check(L10n.translate("默认音色", language: "en") == "Default Voice", "English resources ship with the app")
+        check(L10n.translate("连续 13 天", language: "en") == "13-day streak", "Dynamic statistics localize with counts intact")
+        check(L10n.translate("⌃⌥Y 朗读   ·   ⌃⌥O 截图翻译", language: "en") == "⌃⌥Y Read   ·   ⌃⌥O Screenshot", "Multiple shortcut arguments retain their order")
+        check(L10n.translate("默认音色", language: "zh-Hans") == "默认音色", "Chinese interface retains original copy")
+        check(L10n.translate("这是一段用户自己输入的中文。", language: "en") == "这是一段用户自己输入的中文。", "Unknown user content is never machine translated")
+        check(L10n.translate("授权辅助功能", language: "en") == "Enable Accessibility", "Composed accessibility labels localize recursively")
+        check(L10n.translate("自动检测 · 英语", language: "en") == "Detected · English", "Detected language localizes inside a sentence")
+        let configuration = AppModel()
+        var savedValue = ""
+        do { try configuration.saveAPIKey("  synthetic-test-value  ", store: { savedValue = $0 }) }
+        catch { check(false, "Saving test configuration succeeds") }
+        check(configuration.hasKey && savedValue == "synthetic-test-value", "Successful API save updates shared onboarding and settings state")
+        configuration.hasKey = false
+        do { try configuration.saveAPIKey("synthetic-test-value", store: { _ in throw TranslateError.message("test failure") }) }
+        catch { }
+        check(!configuration.hasKey, "A failed API save cannot show configured status")
+        configuration.previewMode = true
+        var previewSaved = false
+        do { try configuration.saveAPIKey("synthetic-test-value", store: { _ in previewSaved = true }) }
+        catch { }
+        check(!previewSaved && !configuration.hasKey, "Preview never pretends to save credentials")
         let meter = SpeechMeter()
         meter.sample(decibels: -160)
         check(meter.levels.last == 0, "Silence leaves speech dots dark")
@@ -51,6 +132,16 @@ func runSelfTests() {
         check((meter.levels.last ?? 0) > 0.5, "Speech dots respond to actual audio power")
         meter.reset()
         check(meter.levels.allSatisfy { $0 == 0 }, "Stopping clears audio history")
+        let silence = SpeechAnalysis(samples: Array(repeating: 0, count: 4096), sampleRate: 24000)
+        check(silence.spectrum(at: 0.08).allSatisfy { $0 == 0 }, "Spectrum stays quiet during silence")
+        let frequency = SpeechAnalysis.frequencies[6]
+        let tone = SpeechAnalysis(samples: (0..<4096).map { Float(0.3 * sin(2 * Double.pi * frequency * Double($0) / 24000)) }, sampleRate: 24000)
+        let spectrum = tone.spectrum(at: 0.08)
+        check(spectrum.enumerated().max(by: { $0.element < $1.element })?.offset == 6, "Spectrum bars follow the actual audio frequency")
+        meter.sample(decibels: -12, spectrum: spectrum)
+        check(meter.bands[6] > 0.5 && meter.bands[6] > meter.bands[15], "Audio bands rise independently")
+        meter.reset()
+        check(meter.bands.allSatisfy { $0 == 0 }, "Stopping resets spectrum bars")
         let model = AppModel(); model.previewMode = true
         let original: [ShortcutSpec] = [.translate, .read, .ocr]
         model.translateShortcut = original[0]; model.readShortcut = original[1]; model.ocrShortcut = original[2]
@@ -103,6 +194,43 @@ func runSelfTests() {
         check(store.total.translations == 2, "Statistics opt out stops collection")
         check(store.recent(30).count == 30 && store.recent(30).last?.translations == 2, "Chart zero fills dates including today")
         store.loadPreview(); check(store.bestStreak >= store.streak, "Achievements preserve best streak")
+    }
+    MainActor.assumeIsolated {
+        let suite = "SonuviPermissionTest-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = PermissionReturnState(defaults: defaults)
+        check(state.destination == nil, "No permission return on normal launch")
+        state.prepare(.settings, settingsTab: "通用")
+        let resumed = PermissionReturnState(defaults: defaults)
+        check(resumed.destination == .settings && resumed.settingsTab == "通用", "Settings authorization survives process exit")
+        check(!defaults.bool(forKey: "onboarding.permissionReturn"), "Settings authorization never starts onboarding")
+        state.clear()
+        check(PermissionReturnState(defaults: defaults).destination == nil, "Permission return consumed once")
+        state.prepare(.onboarding, settingsTab: "模型")
+        check(PermissionReturnState(defaults: defaults).destination == .onboarding, "Onboarding authorization keeps its own destination")
+        state.prepare(.settings, settingsTab: "朗读")
+        check(state.destination == .settings && state.settingsTab == "朗读", "New permission action replaces stale origin")
+        defaults.set(Date(timeIntervalSinceNow: -86401), forKey: "permissions.return.date")
+        check(state.destination == nil, "Expired authorization does not reopen stale windows")
+        let session = CredentialSession()
+        var calls: [Bool] = []
+        do {
+            _ = try session.read(allowInteraction: false) { interactive in
+                calls.append(interactive); throw KeyAccessError.authorizationRequired
+            }
+            check(false, "Denied key access must throw")
+        } catch { check(!session.hasValue && calls == [false], "Normal translation disallows UI and cannot cache denial") }
+        do {
+            let value = try session.read(allowInteraction: true) { interactive in calls.append(interactive); return "synthetic-test-value" }
+            check(value == "synthetic-test-value" && calls == [false, true], "Explicit authorization can retry after denial")
+            _ = try session.read(allowInteraction: false) { _ in check(false, "Session reuse must not reread keychain"); return "" }
+            check(calls.count == 2 && session.hasValue, "Successful authorization reused for subsequent translations")
+        } catch { check(false, "Synthetic authorization succeeds") }
+        session.set(nil)
+        check(!session.hasValue, "Deleting a credential clears memory")
+        do { _ = try session.read(allowInteraction: false) { _ in "" }; check(false, "Empty credential rejected") }
+        catch { check(!session.hasValue, "Empty credential never cached as authorized") }
     }
     print("PASS: \(count) core checks")
 }

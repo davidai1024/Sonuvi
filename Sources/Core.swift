@@ -67,42 +67,108 @@ enum TranslateError: LocalizedError {
     var errorDescription: String? { switch self { case .message(let s), .retryable(let s): return s } }
 }
 
+enum KeyAccessError: LocalizedError {
+    case missing, authorizationRequired, unavailable(OSStatus)
+    var errorDescription: String? {
+        switch self {
+        case .missing: return "请先在模型设置中填写 DeepSeek API Key。"
+        case .authorizationRequired: return "API Key 已保存，但当前版本尚未获准读取。请在模型设置中点击“授权访问”。"
+        case .unavailable(let status): return "暂时无法读取钥匙串，请稍后重试。错误码：\(status)"
+        }
+    }
+}
+
+/// Only successful reads are cached. Denial is never treated as authorization.
+final class CredentialSession {
+    private var value: String?
+    func read(allowInteraction: Bool, fetch: (Bool) throws -> String) throws -> String {
+        if let value { return value }
+        let result = try fetch(allowInteraction)
+        guard !result.isEmpty else { throw KeyAccessError.missing }
+        value = result
+        return result
+    }
+    var hasValue: Bool { value != nil }
+    func set(_ value: String?) { self.value = value }
+}
+
 enum KeyStore {
     static let service = "com.wusir.musetranslate.deepseek"
-    private static var sessionKey: String?
-    // Metadata-only lookup: opening settings must never unlock a secret.
-    static var containsKey: Bool {
-        let context = LAContext(); context.interactionNotAllowed = true
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service, kSecAttrAccount as String: "api-key",
-            kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationContext as String: context]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        return status == errSecSuccess || status == errSecInteractionNotAllowed
+    private static let session = CredentialSession()
+    private static let lock = NSRecursiveLock()
+
+    /// This app uses the macOS file-based login keychain. LAContext alone
+    /// does not suppress its ACL dialogs. Disable UI only for this synchronous
+    /// operation, serialize all keychain access, and restore the previous flag.
+    private static func access<T>(interactive: Bool, _ body: () throws -> T) throws -> T {
+        lock.lock(); defer { lock.unlock() }
+        if interactive { return try body() }
+        var previous: DarwinBoolean = true
+        let status = SecKeychainGetUserInteractionAllowed(&previous)
+        guard status == errSecSuccess else { throw KeyAccessError.unavailable(status) }
+        let changed = SecKeychainSetUserInteractionAllowed(false)
+        guard changed == errSecSuccess else { throw KeyAccessError.unavailable(changed) }
+        defer { SecKeychainSetUserInteractionAllowed(previous.boolValue) }
+        return try body()
     }
-    static func read() -> String? {
-        if let sessionKey { return sessionKey }
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "api-key", kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        sessionKey = String(data: data, encoding: .utf8)
-        return sessionKey
+    private static var query: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+         kSecAttrAccount as String: "api-key"]
+    }
+    static var containsKey: Bool {
+        (try? access(interactive: false) {
+            if session.hasValue { return true }
+            var request = query
+            request[kSecReturnAttributes as String] = true
+            request[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(request as CFDictionary, &result)
+            return status == errSecSuccess || status == errSecInteractionNotAllowed || status == errSecAuthFailed
+        }) ?? false
+    }
+    /// Translation never opens a password dialog. Only the explicit settings
+    /// action passes allowInteraction=true, respecting macOS's access decision.
+    static func read(allowInteraction: Bool = false) throws -> String {
+        try access(interactive: allowInteraction) {
+            try session.read(allowInteraction: allowInteraction) { _ in
+                var request = query
+                request[kSecReturnData as String] = true
+                request[kSecMatchLimit as String] = kSecMatchLimitOne
+                var result: CFTypeRef?
+                let status = SecItemCopyMatching(request as CFDictionary, &result)
+                if status == errSecItemNotFound { throw KeyAccessError.missing }
+                if [errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled].contains(status) {
+                    throw KeyAccessError.authorizationRequired
+                }
+                guard status == errSecSuccess else { throw KeyAccessError.unavailable(status) }
+                guard let data = result as? Data, let value = String(data: data, encoding: .utf8) else {
+                    throw KeyAccessError.unavailable(errSecDecode)
+                }
+                return value
+            }
+        }
     }
     static func save(_ value: String) throws {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "api-key"]
-        let data = Data(value.utf8)
-        let updated = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if updated == errSecSuccess { sessionKey = value; return }
-        guard updated == errSecItemNotFound else { throw TranslateError.message("钥匙串保存失败：\(updated)") }
-        var insert = query
-        insert[kSecValueData as String] = data
-        insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        let status = SecItemAdd(insert as CFDictionary, nil)
-        guard status == errSecSuccess else { throw TranslateError.message("钥匙串保存失败：\(status)") }
-        sessionKey = value
+        try access(interactive: true) {
+            let data = Data(value.utf8)
+            let updated = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            if updated == errSecSuccess { session.set(value); return }
+            guard updated == errSecItemNotFound else { throw TranslateError.message("钥匙串保存失败：\(updated)") }
+            var insert = query
+            insert[kSecValueData as String] = data
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            let status = SecItemAdd(insert as CFDictionary, nil)
+            guard status == errSecSuccess else { throw TranslateError.message("钥匙串保存失败：\(status)") }
+            session.set(value)
+        }
     }
-    static func delete() { sessionKey = nil; SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "api-key"] as CFDictionary) }
+    static func delete() throws {
+        try access(interactive: true) {
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else { throw TranslateError.message("钥匙串删除失败：\(status)") }
+            session.set(nil)
+        }
+    }
 }
 
 enum Prompts {

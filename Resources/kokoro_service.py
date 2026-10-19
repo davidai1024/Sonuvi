@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""SpeechTrans's own local-only Kokoro service. GPL-3.0."""
+"""Sonuvi local-only Kokoro service. GPL-3.0."""
 import argparse
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import select
 import signal
@@ -29,24 +30,30 @@ def main():
     if sock_path.exists():
         sock_path.unlink()
     os.umask(0o077)
-    # espeak-ng's native path handling fails on long package paths. Keep its
-    # data at a short path owned by this app; do not depend on Speak11's folder.
-    import espeakng_loader
-    pronunciation = root / "espeak-ng-data"
-    if pronunciation.is_dir():
-        espeakng_loader.get_data_path = lambda: str(pronunciation)
-    from mlx_audio.tts.utils import load_model
-    from mlx_audio.audio_io import write
-    import numpy as np
-    model = load_model(ready["model"], model_type="kokoro")
-    for _ in model.generate(text="Hello.", voice=str(Path(ready["model"]) / "voices/af_heart.safetensors"), speed=1.0, lang_code="a"):
-        pass
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(sock_path)); listener.listen(4); listener.settimeout(3)
     generation = threading.Lock()
     last_use = [time.monotonic()]
     audio_root = root / "Audio"
     audio_root.mkdir(exist_ok=True)
+
+    engine = {}
+    warmed_languages = set()
+
+    def load_engine():
+        # Called only under generation. Bind the socket first so warmup and
+        # foreground clients share one initialization, even on a cold launch.
+        if engine:
+            return
+        import espeakng_loader
+        pronunciation = root / "espeak-ng-data"
+        if pronunciation.is_dir():
+            espeakng_loader.get_data_path = lambda: str(pronunciation)
+        from mlx_audio.tts.utils import load_model
+        from mlx_audio.audio_io import write
+        import numpy as np
+        model = load_model(ready["model"], model_type="kokoro")
+        engine.update(model=model, write=write, np=np)
 
     def gone(client):
         try:
@@ -69,27 +76,42 @@ def main():
                 if len(data) > 100_000:
                     return
             req = json.loads(data)
+            if req.get("action") == "capabilities":
+                client.sendall(b'{"status":"ok","voice_protocol":2,"engine_protocol":3}\n'); return
             if req.get("action") == "shutdown":
                 client.sendall(b'{"status":"ok"}\n'); client.close()
                 sock_path.unlink(missing_ok=True); os._exit(0)
-            text = req.get("text", "")
+            warming = req.get("action") == "warmup"
+            text = "Welcome to Sonuvi. Your local reading voice is ready." if warming else req.get("text", "")
             if not isinstance(text, str) or not text.strip() or len(text) > 6000:
                 raise ValueError("Invalid text")
             voice = req.get("voice", "af_heart")
-            if voice not in ("af_heart", "af_bella", "bf_lily", "bm_george", "am_michael"):
+            if not isinstance(voice, str) or not re.fullmatch(r"[ab][fm]_[a-z]+", voice):
                 voice = "af_heart"
+            voice_path = Path(ready["model"]) / "voices" / (voice + ".safetensors")
+            if not voice_path.is_file():
+                raise ValueError("Voice file not installed")
             speed = min(2, max(0.5, float(req.get("speed", 1))))
             with generation:
                 if gone(client):
                     return
+                language = "b" if voice.startswith("b") else "a"
+                if warming and language in warmed_languages:
+                    client.sendall(b'{"status":"ok","warmed":true}\n'); return
+                load_engine()
+                model, np, write = engine["model"], engine["np"], engine["write"]
                 segments = []
                 rate = 24000
-                for part in model.generate(text=text, voice=str(Path(ready["model"]) / "voices" / (voice + ".safetensors")), speed=speed, lang_code="b" if voice.startswith("b") else "a"):
+                for part in model.generate(text=text, voice=str(voice_path), speed=speed, lang_code="b" if voice.startswith("b") else "a"):
                     if gone(client):
                         return
                     segments.append(np.array(part.audio)); rate = part.sample_rate
                 if not segments:
                     raise RuntimeError("Empty audio")
+                warmed_languages.add(language)
+                if warming:
+                    # Force MLX evaluation above; never play or write warmup audio.
+                    client.sendall(b'{"status":"ok","warmed":true}\n'); return
                 descriptor, out = tempfile.mkstemp(suffix=".wav", dir=audio_root)
                 os.close(descriptor)
                 write(out, np.concatenate(segments), rate, format="wav")

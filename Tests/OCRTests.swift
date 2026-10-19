@@ -4,7 +4,7 @@ import AppKit
 import CoreText
 import Vision
 
-func recognizeOCRFixture() throws -> String {
+func makeOCRFixture() throws -> CGImage {
     guard let context = CGContext(data: nil, width: 1000, height: 300, bitsPerComponent: 8, bytesPerRow: 4000, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw TranslateError.message("Cannot create fixture") }
     context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 1000, height: 300))
     let font = CTFontCreateWithName("PingFangSC-Regular" as CFString, 32, nil)
@@ -14,6 +14,11 @@ func recognizeOCRFixture() throws -> String {
     }
     guard let image = context.makeImage() else { throw TranslateError.message("Cannot draw fixture") }
     if let path = ProcessInfo.processInfo.environment["MUSE_OCR_FIXTURE_PATH"], let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) { try data.write(to: URL(fileURLWithPath: path)) }
+    return image
+}
+
+func recognizeOCRFixture() throws -> String {
+    let image = try makeOCRFixture()
     let req = VNRecognizeTextRequest(); req.recognitionLevel = .accurate; req.recognitionLanguages = ["zh-Hans", "en-US"]
     req.usesCPUOnly = ProcessInfo.processInfo.environment["MUSE_TEST_OCR_CPU"] == "1"
     try VNImageRequestHandler(cgImage: image).perform([req])
@@ -25,4 +30,24 @@ func recognizeOCRFixture() throws -> String {
 func runOCRTest() {
     do { _ = try recognizeOCRFixture(); print("PASS: native OCR recognized English and Chinese fixture") }
     catch { let e = error as NSError; fputs("OCR failed: \(e.domain) \(e.code) \(e.userInfo)\n", stderr); exit(1) }
+}
+
+func runOCRPipelineTest() async {
+    do {
+        let image = try makeOCRFixture()
+        let started = Date()
+        let text = try await OCRService.recognize(.image(image))
+        guard text.contains("Hello David"), text.contains("公司"), text.contains("练习") else {
+            throw TranslateError.message("In-memory bilingual OCR mismatch")
+        }
+        print(String(format: "PASS: production in-memory OCR recognized both languages in %.3f seconds", Date().timeIntervalSince(started)))
+        let task = Task { try await OCRService.recognize(.image(image)) }
+        task.cancel()
+        do {
+            _ = try await task.value
+            throw TranslateError.message("Canceled OCR returned stale text")
+        } catch is CancellationError {
+            print("PASS: canceled OCR does not deliver text")
+        }
+    } catch { fputs("OCR pipeline failed: \(error)\n", stderr); exit(1) }
 }

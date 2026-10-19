@@ -79,10 +79,10 @@ struct ActivityMatrix: View {
                     }
                 } }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("最近 \(rows.count) 天活动，\(rows.filter { $0.translations + $0.readings > 0 }.count) 天有使用")
+                .accessibilityLabel(L10n.text("最近 \(rows.count) 天活动，\(rows.filter { $0.translations + $0.readings > 0 }.count) 天有使用"))
             if !compact {
                 HStack {
-                    Text(selected.flatMap { rows.indices.contains($0) ? rows[$0] : nil }.map { "\($0.id) · 翻译 \($0.translations) 次 · 朗读 \($0.readings) 次" } ?? "最近 90 天 · 每一个光点，都是一天的积累")
+                    LText(selected.flatMap { rows.indices.contains($0) ? rows[$0] : nil }.map { "\($0.id) · 翻译 \($0.translations) 次 · 朗读 \($0.readings) 次" } ?? "最近 90 天 · 每一个光点，都是一天的积累")
                     Spacer(minLength: 0)
                 }.font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2).frame(minHeight: 28, alignment: .topLeading)
             }
@@ -98,20 +98,20 @@ struct MenuSummary: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
                 BrandIcon(size: 20)
-                Text("Sonuvi").font(.system(size: 13, weight: .semibold))
+                LText("Sonuvi").font(.system(size: 13, weight: .semibold))
                 Spacer(minLength: 8)
-                Text("连续 \(usage.streak) 天").font(.system(size: 11)).foregroundStyle(.secondary)
+                LText("连续 \(usage.streak) 天").font(.system(size: 11)).foregroundStyle(.secondary)
             }
             HStack(spacing: 4) {
-                Text("今天").foregroundStyle(.secondary)
-                Text("\(usage.today.translations) 次翻译").monospacedDigit()
-                Text("·").foregroundStyle(.tertiary)
-                Text("\(usage.today.readings) 次朗读").monospacedDigit()
+                LText("今天").foregroundStyle(.secondary)
+                LText("\(usage.today.translations) 次翻译").monospacedDigit()
+                LText("·").foregroundStyle(.tertiary)
+                LText("\(usage.today.readings) 次朗读").monospacedDigit()
                 Spacer(minLength: 0)
             }.font(.system(size: 11)).lineLimit(1)
             FlowingDots(progress: Double(activeDays) / 7, compact: true, animate: motion.active)
                 .frame(height: 28).accessibilityHidden(true)
-                .help("最近 7 天使用 \(activeDays) 天")
+                .help(L10n.text("最近 7 天使用 \(activeDays) 天"))
         }.padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 7)
             .frame(width: 296, alignment: .topLeading).fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)

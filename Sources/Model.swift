@@ -29,6 +29,9 @@ final class AppModel: ObservableObject {
     @Published var mouseLookup = UserDefaults.standard.object(forKey: "mouseLookup") as? Bool ?? true
     @Published var autoRead = UserDefaults.standard.bool(forKey: "autoRead")
     @Published var permissionGranted = false
+    @Published var permissionMessage = ""
+    @Published var permissionRepairing = false
+    @Published var keyAccessRequired = false
     @Published var screenPermission = false
     @Published var settingsTab = "通用"
     let usage = UsageStore()
@@ -36,9 +39,19 @@ final class AppModel: ObservableObject {
     @Published var hotkeysReady = false
     @Published var hasKey = false
     @Published var ocrBusy = false
+    @Published var ocrRecognizing = false
+    var cancelOCR: (() -> Void)?
     @Published var recordingShortcut = false { didSet { if oldValue != recordingShortcut { onShortcutRecording?(recordingShortcut) } } }
     @Published var statusText = ""
     @Published var appearance = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system { didSet { applyAppearance() } }
+    @Published var language = AppLocalization.shared.language {
+        didSet {
+            AppLocalization.shared.language = language
+            if !previewMode { UserDefaults.standard.set(language.rawValue, forKey: "appLanguage") }
+            onLanguageChanged?()
+        }
+    }
+    var onLanguageChanged: (() -> Void)?
     @Published var loginEnabled = LoginManager.enabled
     @Published var keepOnTop = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true { didSet { onWindowChanged?() } }
     @Published var excludedApps = UserDefaults.standard.stringArray(forKey: "excludedApps") ?? []
@@ -56,6 +69,11 @@ final class AppModel: ObservableObject {
     var startOCR: (() -> Void)?
     var openSettings: (() -> Void)?
     var hideWindow: (() -> Void)?
+    var onLocalSelection: ((NSPoint, Int, Bool) -> Void)?
+    var requestPermission: ((Bool) -> Void)?
+    var repairPermissions: (() -> Void)?
+    var restartApplication: (() -> Void)?
+    var restartOnboarding: (() -> Void)?
     private var task: Task<Void, Never>?
     private var currentID = UUID()
     private var toastID = UUID()
@@ -64,6 +82,31 @@ final class AppModel: ObservableObject {
     var direction: Direction { TextRules.direction(source) }
     var englishText: String { direction == .toChinese ? source : (word?.translation ?? result) }
     var speechInstalled: Bool { runtime.availablePython != nil }
+    var selectedVoiceAvailable: Bool {
+        guard let info = RuntimeManager.info else { return false }
+        return FileManager.default.fileExists(atPath: info.model + "/voices/" + VoiceCatalog.option(voice).id + ".safetensors")
+    }
+    func saveVoicePreferences() {
+        UserDefaults.standard.set(voice, forKey: "voice")
+        UserDefaults.standard.set(speed, forKey: "speed")
+        if !previewMode { runtime.warmup() }
+    }
+    func saveAPIKey(_ value: String, store: (String) throws -> Void = KeyStore.save) throws {
+        guard !previewMode else { throw TranslateError.message("外观预览不保存真实设置。") }
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        try store(value)
+        hasKey = true; keyAccessRequired = false
+    }
+    func authorizeAPIKeyAccess() throws {
+        guard !previewMode else { return }
+        _ = try KeyStore.read(allowInteraction: true)
+        hasKey = true; keyAccessRequired = false
+    }
+    func deleteAPIKey() throws {
+        guard !previewMode else { return }
+        try KeyStore.delete(); hasKey = false; keyAccessRequired = false
+    }
 
     func refreshStatus() { permissionGranted = SelectionReader.trusted; screenPermission = CGPreflightScreenCaptureAccess(); if !previewMode { hasKey = KeyStore.containsKey }; runtime.refresh() }
     func applyAppearance() {
@@ -83,6 +126,12 @@ final class AppModel: ObservableObject {
         translateShortcut.store("translateShortcut"); readShortcut.store("readShortcut"); ocrShortcut.store("ocrShortcut")
         do { try LoginManager.apply(loginEnabled) }
         catch { loginEnabled = LoginManager.enabled; throw TranslateError.message("其他设置已保存。" + error.localizedDescription) }
+    }
+    func showsSelectionMenu(in bundleID: String) -> Bool { !excludedApps.contains(bundleID) }
+    func setSelectionMenu(_ enabled: Bool, in bundleID: String) {
+        excludedApps.removeAll { $0 == bundleID }
+        if !enabled { excludedApps.append(bundleID) }
+        if !previewMode { UserDefaults.standard.set(excludedApps, forKey: "excludedApps") }
     }
     func applyShortcuts(_ bindings: [ShortcutSpec]) throws {
         guard bindings.count == 3, Set(bindings.map { "\($0.keyCode):\($0.modifiers)" }).count == 3 else {
@@ -107,6 +156,7 @@ final class AppModel: ObservableObject {
         error = message; recoverySettingsTab = settingsTab
     }
     func cancel() {
+        if ocrBusy { cancelOCR?() }
         if readingTranslation { readingTranslation = false; readingStatus = nil }
         currentID = UUID(); task?.cancel(); task = nil; busy = false }
     func translate(readAfter: Bool = false, presentation: ReadingPresentation = .inline) {
@@ -122,7 +172,12 @@ final class AppModel: ObservableObject {
         let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { error = "请先划选或输入文字。"; return }
         guard text.count <= 6000 else { error = "单次最多 6000 个字符，请缩短后再翻译。"; return }
-        guard let key = KeyStore.read(), !key.isEmpty else { showIssue("请先在模型设置中填写 DeepSeek API Key。", settingsTab: "模型"); return }
+        let key: String
+        do { key = try KeyStore.read(); keyAccessRequired = false }
+        catch {
+            if case KeyAccessError.authorizationRequired = error { keyAccessRequired = true }
+            showIssue(error.localizedDescription, settingsTab: "模型"); return
+        }
         let kind = effectiveKind
         let dir = direction
         let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,6 +244,8 @@ final class AppModel: ObservableObject {
         let text = (override ?? englishText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { error = "请先翻译中文，再朗读英文译文。"; return }
         guard text.count <= 6000 else { error = "朗读内容过长，请缩短后再试。"; return }
+        guard !runtime.installing else { error = "本地朗读环境正在准备，完成后即可朗读。"; return }
+        if runtime.ready && !selectedVoiceAvailable { error = "所选音色尚未准备好，请在模型设置中修复朗读。"; return }
         guard let python = runtime.availablePython, let bridge = Bundle.main.url(forResource: "kokoro_bridge", withExtension: "py"), let service = Bundle.main.url(forResource: "kokoro_service", withExtension: "py") else { showIssue("请先在模型设置中导入或下载本地朗读模型。", settingsTab: "模型"); return }
         usage.touch()
         let readingApp = sourceApp

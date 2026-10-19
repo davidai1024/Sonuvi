@@ -48,16 +48,16 @@ private struct ReadingBar: View {
     let stop: () -> Void
     var body: some View {
         HStack(spacing: 7) {
-            ReadingDragHandle().frame(width: 24, height: 32).help("拖动朗读条")
+            ReadingDragHandle().frame(width: 24, height: 32).help(L10n.text("拖动朗读条"))
             if isActive { SpeechDots(meter: meter) }
             else { Image(systemName: "exclamationmark.circle").foregroundStyle(.secondary) }
-            Text(message).font(.system(size: 12)).lineLimit(1).truncationMode(.tail).help(message)
+            LText(message).font(.system(size: 12)).lineLimit(1).truncationMode(.tail).help(L10n.text(message))
             Spacer(minLength: 0)
             Button(action: stop) {
                 Image(systemName: isActive ? "stop.fill" : "xmark")
                     .font(.system(size: 11, weight: .semibold)).frame(width: 30, height: 30).contentShape(Rectangle())
-            }.buttonStyle(MuseHoverStyle(radius: 7)).help(isActive ? "停止朗读" : "关闭")
-                .accessibilityLabel(isActive ? "停止朗读" : "关闭朗读提示")
+            }.buttonStyle(MuseHoverStyle(radius: 7)).help(L10n.text(isActive ? "停止朗读" : "关闭"))
+                .accessibilityLabel(L10n.text(isActive ? "停止朗读" : "关闭朗读提示"))
         }.padding(.leading, 4).padding(.trailing, 5).frame(height: 40)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -65,11 +65,11 @@ private struct ReadingBar: View {
 
 private struct ReadingDragHandle: NSViewRepresentable {
     func makeNSView(context: Context) -> Handle { Handle() }
-    func updateNSView(_ nsView: Handle, context: Context) {}
+    func updateNSView(_ nsView: Handle, context: Context) { nsView.setAccessibilityLabel(L10n.text("拖动朗读条")) }
     final class Handle: NSView {
         override init(frame: NSRect) {
             super.init(frame: frame)
-            setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel("拖动朗读条")
+            setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel(L10n.text("拖动朗读条"))
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
         override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }

@@ -17,17 +17,117 @@ enum SelectionReader {
             _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         }
     }
+    // Only called once after the user explicitly repairs and relaunches.
+    static func registerAfterRepair() {
+        UserDefaults.standard.set(true, forKey: "accessibilityPermissionRequested")
+        UserDefaults.standard.synchronize()
+        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
     static func fromAccessibility() -> String? {
-        guard trusted, let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
-        let app = AXUIElementCreateApplication(front.processIdentifier)
-        AXUIElementSetMessagingTimeout(app, 0.4)
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success, let focused else { return nil }
-        let element = focused as! AXUIElement
-        var value: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &value) == .success,
-           let text = value as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
-        return nil
+        guard trusted, let front = NSWorkspace.shared.frontmostApplication,
+              front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return selectedText(pid: front.processIdentifier)
+    }
+    // AX IPC runs off the UI thread. Cancel queued work when a newer gesture
+    // arrives, so unsupported controls cannot create an ever-growing backlog.
+    private static let lookupQueue = DispatchQueue(label: "Sonuvi.selection", qos: .userInitiated)
+    // Accessed only on lookupQueue, for explicit per-process accessibility opt-ins.
+    nonisolated(unsafe) private static var manualAccessibilityAttempts: [pid_t: TimeInterval] = [:]
+    static func fromAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> String? {
+        guard trusted, !Task.isCancelled else { return nil }
+        let axPoint = point.map { CGPoint(x: $0.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - $0.y) }
+        let profile = accessibilityProfile(pid: pid)
+        let ticket = SelectionReadTicket()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lookupQueue.async {
+                    guard !ticket.cancelled else { continuation.resume(returning: nil); return }
+                    continuation.resume(returning: selectedText(pid: pid, at: axPoint, profile: profile, isCancelled: { ticket.cancelled }))
+                }
+            }
+        } onCancel: { ticket.cancel() }
+    }
+    static func accessibilityProfile(pid: pid_t) -> SelectionAccessibilityProfile {
+        let app = NSRunningApplication(processIdentifier: pid)
+        let electron = app?.bundleURL.map {
+            FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
+        } ?? false
+        return .resolve(bundleID: app?.bundleIdentifier, electron: electron)
+    }
+    static func prepareAccessibility(pid: pid_t) {
+        guard trusted, pid != ProcessInfo.processInfo.processIdentifier else { return }
+        let profile = accessibilityProfile(pid: pid)
+        guard profile.activationAttribute != nil else { return }
+        lookupQueue.async {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, 0.08)
+            activateAccessibility(app: app, pid: pid, profile: profile)
+        }
+    }
+    nonisolated private static func activateAccessibility(app: AXUIElement, pid: pid_t, profile: SelectionAccessibilityProfile) {
+        guard AXIsProcessTrusted(), let attribute = profile.activationAttribute else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - (manualAccessibilityAttempts[pid] ?? -100) > 30 else { return }
+        if manualAccessibilityAttempts.count > 64 { manualAccessibilityAttempts.removeAll() }
+        manualAccessibilityAttempts[pid] = now
+        // Per-process opt-in documented by Electron / Chromium source. This
+        // neither enables VoiceOver nor changes a system-wide preference.
+        AXUIElementSetAttributeValue(app, attribute as CFString, kCFBooleanTrue)
+    }
+    nonisolated private static func selectedText(pid: pid_t, at point: CGPoint? = nil,
+        profile: SelectionAccessibilityProfile = .standard, isCancelled: () -> Bool = { false }) -> String? {
+        guard AXIsProcessTrusted(), !isCancelled(), pid != ProcessInfo.processInfo.processIdentifier else { return nil }
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.24
+        func valid() -> Bool { !isCancelled() && ProcessInfo.processInfo.systemUptime < deadline }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.08)
+        activateAccessibility(app: app, pid: pid, profile: profile)
+        func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+            guard valid() else { return nil }
+            AXUIElementSetMessagingTimeout(element, 0.08)
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+            return value
+        }
+        func element(_ value: CFTypeRef?) -> AXUIElement? {
+            guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+            return (value as! AXUIElement)
+        }
+        let focused = element(attribute(app, kAXFocusedUIElementAttribute))
+        if let focused, attribute(focused, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return nil }
+        var hit: AXUIElement?
+        if let point, valid() {
+            AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit)
+            if let found = hit {
+                var hitPID: pid_t = 0
+                if AXUIElementGetPid(found, &hitPID) != .success || hitPID != pid { hit = nil }
+            }
+        }
+        return SelectionNodeSearch.resolve(hit: hit, focused: focused, parent: {
+            element(attribute($0, kAXParentAttribute))
+        }, read: { node in
+            if attribute(node, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return .protected }
+            if let text = SelectionText.usable(attribute(node, kAXSelectedTextAttribute) as? String) { return .text(text) }
+            // Chromium/WebKit document selections can span several text nodes.
+            // Use the selected marker only; never read the full document value.
+            if let marker = attribute(node, "AXSelectedTextMarkerRange"), valid() {
+                var selected: CFTypeRef?
+                if AXUIElementCopyParameterizedAttributeValue(node, "AXStringForTextMarkerRange" as CFString, marker, &selected) == .success,
+                   let text = SelectionText.usable(selected as? String) { return .text(text) }
+            }
+            guard let rangeValue = attribute(node, kAXSelectedTextRangeAttribute),
+                  CFGetTypeID(rangeValue) == AXValueGetTypeID() else { return .empty }
+            var range = CFRange()
+            guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range),
+                  range.location >= 0, range.length > 0, range.length <= 6000 else { return .empty }
+            var value: CFTypeRef?
+            if valid(), AXUIElementCopyParameterizedAttributeValue(node, kAXStringForRangeParameterizedAttribute as CFString, rangeValue, &value) == .success,
+               let text = SelectionText.usable(value as? String) { return .text(text) }
+            guard let text = attribute(node, kAXValueAttribute) as? String,
+                  let selected = SelectionText.substring(text, location: range.location, length: range.length) else { return .empty }
+            return .text(selected)
+        }, isValid: valid, maximumDepth: profile == .chromium ? 8 : 4)
     }
     // AX selection bounds use a top-left screen origin; AppKit uses bottom-left.
     static func selectionAnchor() -> NSPoint? {
@@ -50,10 +150,16 @@ enum SelectionReader {
     // Clipboard fallback runs only after an explicit shortcut. Restore all data
     // types if no newer clipboard write occurred; never replace a newer user copy.
     static func capture(allowClipboard: Bool = true) async -> String? {
-        if let text = fromAccessibility() { return text }
-        guard allowClipboard, !Task.isCancelled, trusted, let front = NSWorkspace.shared.frontmostApplication,
+        guard !Task.isCancelled, trusted, let front = NSWorkspace.shared.frontmostApplication,
               front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
         let pid = front.processIdentifier
+        // Keyboard commands follow focus, not an unrelated mouse position.
+        if let text = await fromAccessibility(pid: pid) {
+            guard !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
+            return text
+        }
+        guard allowClipboard, !Task.isCancelled,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         let appElement = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appElement, 0.3)
         var focused: CFTypeRef?

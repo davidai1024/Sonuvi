@@ -35,8 +35,8 @@ struct SettingsRow<Control: View>: View {
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(.secondary).frame(width: 22).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(MuseLayout.sectionTitle).foregroundStyle(.primary)
-                if !detail.isEmpty { Text(detail).font(MuseLayout.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                LText(title).font(MuseLayout.sectionTitle).foregroundStyle(.primary)
+                if !detail.isEmpty { LText(detail).font(MuseLayout.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -58,10 +58,10 @@ struct AppearanceSegments: View {
         HStack(spacing: 2) {
             ForEach(AppearanceMode.allCases, id: \.self) { mode in
                 Button { value = mode } label: {
-                    Text(mode == .system ? "系统" : mode.rawValue).font(.system(size: 12, weight: .semibold)).frame(width: 52, height: 30)
+                    LText(mode == .system ? "系统" : mode.rawValue).font(.system(size: 12, weight: .semibold)).frame(width: 52, height: 30)
                         .background(value == mode ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9))
                         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(value == mode ? Color.primary.opacity(0.13) : .clear))
-                }.buttonStyle(MuseHoverStyle(radius: 9)).accessibilityLabel(mode.rawValue).accessibilityAddTraits(value == mode ? [.isSelected] : [])
+                }.buttonStyle(MuseHoverStyle(radius: 9)).accessibilityLabel(L10n.text(mode.rawValue)).accessibilityAddTraits(value == mode ? [.isSelected] : [])
             }
         }.padding(3).background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
     }

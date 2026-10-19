@@ -56,7 +56,7 @@ def clone_tree(source, destination):
 
 def verify(python, root):
     code = "import importlib.util,sys; assert all(importlib.util.find_spec(n) for n in ['mlx_audio','misaki','soundfile','spacy']); print(sys.prefix)"
-    prefix = subprocess.check_output([str(python), "-c", code], text=True).strip()
+    prefix = subprocess.check_output([str(python), "-I", "-c", code], text=True).strip()
     if not Path(prefix).resolve().is_relative_to(root.resolve()):
         raise RuntimeError("运行环境仍引用外部 Python，导入未完成")
 
@@ -66,7 +66,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--uv", required=True, type=Path)
-    parser.add_argument("--mode", choices=["import", "download"], required=True)
+    parser.add_argument("--mode", choices=["import", "download", "bundled"], required=True)
+    parser.add_argument("--bundle", type=Path)
     args = parser.parse_args()
     root = args.root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -85,7 +86,25 @@ def main():
         env["UV_CACHE_DIR"] = str(root / "Cache/uv")
         env["HF_HOME"] = str(root / "Cache/huggingface")
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-        if args.mode == "import":
+        if args.mode == "bundled":
+            if args.bundle is None:
+                raise RuntimeError("未找到内置朗读环境")
+            bundle = args.bundle.resolve()
+            manifest = json.loads((bundle / "manifest.json").read_text())
+            if manifest.get("format") != 1 or manifest.get("architecture") != "arm64":
+                raise RuntimeError("内置朗读环境格式不支持")
+            emit("runtime", "正在准备内置朗读环境，无需联网…")
+            clone_tree(bundle / "runtime", stage / "runtime")
+            clone_tree(bundle / "model", stage / "model")
+            python = stage / "runtime/bin/python3"
+            # Full packages contain a standalone CPython distribution, never
+            # a venv with links back to the build machine.
+            if (stage / "runtime/pyvenv.cfg").exists():
+                raise RuntimeError("内置 Python 必须是可迁移的独立环境")
+            for link in stage.rglob("*"):
+                if link.is_symlink() and not link.resolve().is_relative_to(stage):
+                    raise RuntimeError("内置环境含外部链接，无法在本机使用")
+        elif args.mode == "import":
             seed = Path.home() / ".local/share/speak11/venv"
             seed_python = seed / "bin/python3"
             if not seed_python.exists():
@@ -142,7 +161,7 @@ def main():
         # Each installation has a permanent unique path: no venv relocation.
         # The ready marker is atomic; previous working installations stay intact.
         # Move only imported standalone distributions, never a generated venv.
-        if args.mode == "import":
+        if args.mode in ("import", "bundled"):
             final = root / ("install-" + str(time.time_ns()))
             stage.rename(final)
         else:
@@ -176,7 +195,7 @@ def main():
         for previous in root.iterdir():
             if previous.is_dir() and previous != final and (previous.name.startswith("install-") or (previous.name.startswith("installation-") and previous.name.endswith(".partial"))):
                 shutil.rmtree(previous, ignore_errors=True)
-        emit("done", "独立环境已就绪，不再依赖 Speak11")
+        emit("done", "内置朗读环境已就绪" if args.mode == "bundled" else "独立环境已就绪，不再依赖 Speak11")
 
 
 if __name__ == "__main__":

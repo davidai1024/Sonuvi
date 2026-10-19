@@ -1,6 +1,6 @@
-Sonuvi 0.4.3 — 2026-10-16
+Sonuvi 0.4.6 — 2026-10-16
 
-This is a new slim native macOS application, not an official release of
+This is a native macOS application, not an official release of
 Easydict or Speak11. It does not redistribute the entire Easydict application.
 New source is GPL-3.0. Full corresponding source and build scripts accompany
 the binary. See LICENSE.
@@ -19,13 +19,12 @@ Speak11 — https://github.com/smcantab/speak11
 Unlicense (upstream). An original Unix-socket client can access the user's
 existing installation as a transitional fallback. The user may import a local
 copy of their existing environment into Sonuvi-owned storage.
-Speak11 source, installed Python dependencies, and model weights are not
-included in this archive. The new local service and installer are independent
-implementations. Once imported/downloaded, Speak11 is not required.
+Speak11 source is not included. The full offline edition contains independently
+owned Python dependencies and model files; it does not require Speak11. The
+new local service and installer are independent implementations.
 
 uv — https://github.com/astral-sh/uv
-Release bundles include uv 0.12.5 for arm64. The source repository downloads
-this fixed version from the official Astral GitHub Release on first build. Copyright Astral Software Inc.
+Bundled arm64 binary: uv 0.12.5. Copyright Astral Software Inc.
 MIT OR Apache-2.0. Full texts: UV-LICENSE-MIT and UV-LICENSE-APACHE.
 Source available from the upstream project and its 0.12.5 release/tag.
 uv bootstraps a Python runtime when no existing Python is available.
@@ -33,13 +32,17 @@ uv bootstraps a Python runtime when no existing Python is available.
 Kokoro — https://huggingface.co/hexgrad/Kokoro-82M
 MLX conversion — https://huggingface.co/mlx-community/Kokoro-82M-bf16
 Pinned model revision: a71e4d38b236d968966a2002c4c895dbd12b1c3c.
-Model weights and voices are NOT included. They are downloaded on demand or
-copied locally from the user's existing cache. Model notices are retained in
-the downloaded/imported model folder.
+The full offline edition includes model weights at the pinned revision and
+all 28 English voice files. The MLX model card declares Apache-2.0; its card,
+license text and attribution accompany the payload. The lightweight edition
+downloads weights on demand or imports them from an existing local cache.
 The optional installer obtains MLX Audio, MLX, Misaki, spaCy, en_core_web_sm,
 soundfile, phonemizer-fork, espeakng_loader and supporting dependencies from
 upstream package/model sources; their licenses and package metadata remain
-with the runtime. These Python/native dependencies are NOT in this archive.
+with the runtime. The full offline edition includes these Python/native dependencies and a
+standalone CPython runtime; individual package licenses and metadata remain
+in their distribution directories. A package/version inventory is included
+in BundledVoice/dependencies.json. No private application state is included.
 
 Apple native frameworks
 AppKit, SwiftUI, Vision, Charts, NaturalLanguage, ServiceManagement,

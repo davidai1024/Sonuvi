@@ -1,161 +1,228 @@
 <div align="center">
 
-<img src="docs/assets/app-icon.png" width="112" alt="Sonuvi icon" />
+<img src="docs/assets/app-icon.png" width="104" alt="Sonuvi 应用图标" />
 
 # Sonuvi
 
-### 划词即译，自然朗读。
+### 选中英文，让它自然读给你听。
 
-一款为 macOS 打造的中英划词翻译与本地英文朗读工具。<br />
-读懂眼前的文字，也听见它自然的声音。
+一个住在 Mac 菜单栏里的朗读伙伴。<br />
+用本地小模型听英文，用划词与截图翻译读懂它。
 
-![macOS](https://img.shields.io/badge/macOS-13%2B-111111?style=flat-square&logo=apple)
-![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square)
-![Version](https://img.shields.io/badge/version-0.4.3-6b7280?style=flat-square)
-![License](https://img.shields.io/badge/license-GPL--3.0-111111?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.18-36b98a?style=flat-square)
+![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
+![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
+![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
-[功能](#读译听在当前场景完成) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [源码构建](#从源码构建) · [致谢](#开源致谢)
+[界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
 
 </div>
 
 ---
 
-## 少一次切换，多一点专注
+## 让阅读不必停在一个单词上
 
-在浏览器、文档或其他应用里遇到不认识的英文，选中它，查看中文释义；想知道一句中文用英语怎么说，选中它，得到英文表达。需要听发音时，直接播放。
+读文章、看文档、学英语时，选中一段英文，Sonuvi 就能用自然的声音读出来。无需把文字搬到另一个网站，也不必一直盯着翻译窗口。
 
-Sonuvi 把这几个动作放在文字旁边：**翻译交给 DeepSeek，英文朗读交给本机的 Kokoro 82M。**
+**朗读由本机 Kokoro 82M 完成，翻译通过你自己的 DeepSeek API。** 英文朗读可以离线使用；中文选区也能先翻译成英文，再听英文表达。
 
-> 当前为个人使用的早期版本。应用使用 ad-hoc 签名，尚未公证，也未提供自动更新；跨应用取词能力取决于目标应用是否开放相应接口。
+- **28 个英文音色**：20 个美音、8 个英音，支持试听和 0.5–2 倍语速。
+- **长文接着听**：优先按句子分段，播放当前段时提前合成下一段，减少等待。
+- **一个轻量浮条**：跨应用朗读时只显示可拖动的播放浮条，停止或读完即收起。
+- **声音有了形状**：16 列点阵根据实际音频频谱上下跳动，停顿时回落。
+- **完整离线包**：内置模型、音色和运行环境，接收者无需安装 Speak11 或自行搭建 Python。
 
-## 读、译、听，在当前场景完成
+> 完整离线 DMG 约 **468 MB**，适用于 **Apple Silicon / macOS 26.2+**，建议至少预留 **3 GB** 空间。基础界面源码的最低部署版本为 macOS 13，与捆绑朗读环境的系统要求不同。
 
-| 能力 | 体验 |
+## 界面预览
+
+以下图片来自 **0.4.18 的原生界面**。文字、统计与播放状态使用演示数据；静态截图无法完整呈现玻璃材质和点阵动画。
+
+### 朗读时，只留一条轻量浮条
+
+<div align="center">
+<img src="docs/assets/reading-bar.png" width="504" alt="朗读浮条：拖动手柄、音频点阵、朗读状态与停止按钮" />
+</div>
+
+跨应用听英文时，不打开翻译窗口。点阵随声音起伏，读完或停止后自动收起。
+
+### 原文与译文，保留阅读的主次
+
+<table>
+<tr><td align="center"><strong>浅色</strong></td><td align="center"><strong>深色</strong></td></tr>
+<tr>
+<td width="50%"><img src="docs/assets/translation-light.png" alt="浅色翻译窗口：原文和译文卡片" width="100%" /></td>
+<td width="50%"><img src="docs/assets/translation-dark.png" alt="深色翻译窗口：原文和译文卡片" width="100%" /></td>
+</tr>
+</table>
+
+### 常用操作在菜单里，使用进展看得见
+
+<table>
+<tr><td width="34%" valign="top"><img src="docs/assets/menu.png" alt="原生菜单栏菜单：使用摘要、翻译、朗读、截图与快捷键" width="100%" /></td><td width="66%" valign="top"><img src="docs/assets/statistics.png" alt="统计页：流动点阵、阅读与朗读统计、每日趋势" width="100%" /></td></tr>
+</table>
+
+### 把第一次使用，也认真做好
+
+<img src="docs/assets/onboarding.png" alt="首次引导：本地 Kokoro 模型、音色试听和默认语速" width="100%" />
+
+<table>
+<tr><td align="center"><strong>快捷键 · 清晰的录制状态</strong></td><td align="center"><strong>权限 · 独立管理与状态反馈</strong></td></tr>
+<tr><td width="50%"><img src="docs/assets/shortcuts.png" alt="快捷键设置：选中操作与大号按键预览" width="100%" /></td><td width="50%"><img src="docs/assets/permissions.png" alt="权限设置：授权说明与已授权状态" width="100%" /></td></tr>
+</table>
+
+## 先听，再理解
+
+| 能力 | 使用方式 |
 | :--- | :--- |
-| **跨应用划词** | 选中文字后显示翻译、朗读入口，也支持全局快捷键。 |
-| **中英自动互译** | 中文译成英文，英文译成中文，无需每次切换方向。 |
-| **单词与句子分开呈现** | 单词、短语展示释义、词性、音标和例句；句子展示流式译文。 |
-| **自然英文朗读** | Kokoro 82M 在 Apple Silicon Mac 上运行，支持五种美音／英音音色与 0.5–2 倍语速。 |
-| **轻量播放浮条** | 跨应用朗读不打开翻译窗口；浮条可拖动、可停止，播放结束自动收起。 |
-| **窗口内朗读** | 在翻译窗口播放时，点阵和停止按钮直接出现在窗口底部。 |
-| **声音驱动的点阵** | 朗读状态读取播放器实时音量，随语音起伏变化。 |
-| **截图翻译** | 主动框选区域后，在本机 OCR，再发送识别文字进行翻译。 |
-| **系统文本服务** | 支持的应用可通过右键 → 服务调用翻译和朗读。 |
-| **复制与编辑** | 原文、译文、例句支持复制；原文支持常用编辑快捷键和自适应高度。 |
-| **原生 macOS 界面** | 深浅色、可调整窗口、菜单栏入口；macOS 26 使用原生液态玻璃，旧系统使用原生材质。 |
-| **本地使用统计** | 查看翻译、朗读、词数、活跃记录与成就进度。 |
+| **跨应用取词** | 选中文字后调用浮动菜单或全局快捷键。兼容性取决于目标应用是否提供可读取的文字。 |
+| **自然英文朗读** | 本地 Kokoro 82M 合成；后台预热、常驻服务、长文提前合成下一段。 |
+| **两种播放位置** | 跨应用操作显示浮条；翻译窗口内发起朗读，直接在窗口底部显示点阵与停止按钮。 |
+| **中英自动互译** | 中文译英文、英文译中文，无需来回切换方向。 |
+| **词典与句子模式** | 单词、短语展示释义、词性、音标和例句；句子展示流式译文。 |
+| **截图翻译** | 原生框选区域，本机 OCR 识别，再翻译识别出的文字；先展示识别状态。 |
+| **系统服务** | 在支持文本服务的应用中，通过右键 → 服务调用翻译和朗读。 |
+| **长文本阅读** | 原文按内容增高，到上限后滚动；向下阅读时保留返回原文入口，滚动条使用细滑块。 |
+| **复制与编辑** | 原文、译文和例句可复制；支持常用键盘编辑操作。 |
+| **原生界面** | 深浅色、可调整窗口、原生标题栏；macOS 26 使用液态玻璃，旧系统采用原生材质。 |
+| **中英界面** | 简体中文、English、跟随系统；默认跟随系统。 |
+| **快捷键录制** | 选中对应操作，按键预览同步点亮；松键保存，Esc 或点击外部取消。设置与引导使用同一组件。 |
+| **应用例外** | 按应用控制是否显示划词菜单，开启即显示，关闭即隐藏。 |
+| **本地统计** | 翻译、朗读、词数、时长、应用、活跃天数、每日趋势与成就进度。 |
+
+## 0.4.18 更新了什么
+
+这次仓库从 0.4.3 同步到 0.4.18，包含离线模型、28 个音色、首次使用引导、双语界面、朗读与截图性能优化，以及后续交互修复。
+
+最近几版重点打磨了这些细节：
+
+- **重装与授权**：标准 DMG 拖拽安装；独立权限页；需要清理旧授权时，先处理再显示窗口，避免设置窗口先出现、关闭、再出现。
+- **模型管理**：正常状态突出“试听声音”，修复、查看文件、移除收进更多菜单；操作取消与模型可用状态分别展示。
+- **API Key 输入**：点击外部、Esc 或 Return 可结束编辑，草稿保留，保存时才写入钥匙串。
+- **首次引导**：页面随内容居中；可从通用设置重新进入，保留现有配置；完成后用紧凑卡片提示菜单入口。
+- **快捷键与翻译窗口**：更明确的选中和录制反馈；细滚动条；滚出视野的原文可以一键返回。
+
+<details>
+<summary>看看新的菜单栏欢迎提示</summary>
+
+<img src="docs/assets/welcome.png" width="420" alt="紧凑的菜单栏欢迎卡片，突出自然朗读与离线能力" />
+
+</details>
+
+[查看完整更新记录 →](CHANGELOG.md)
 
 ## 开始使用
 
-### 1. 准备应用
+### 1. 安装
 
-当前仓库提供完整源码，可按下方步骤构建。生成的 `Sonuvi.app` 建议放入「应用程序」，并始终从同一路径运行。
+完整离线 DMG 打开后，将 **Sonuvi.app 拖到 Applications**。更新时先退出旧版，由 Finder 提示替换、保留或取消，之后从「应用程序」打开。
 
-**系统要求：Apple Silicon Mac，macOS 13 或更高版本。**
+仓库提供源码与构建脚本，**不包含模型或完整 DMG 二进制**。完整包由维护者另行提供，源码构建方法见下方。
 
-### 2. 配置翻译
+### 2. 完成首次引导
 
-打开 **设置 → 模型**，填写自己的 DeepSeek API Key。Key 保存在 macOS 钥匙串，翻译需要网络以及有效的 API 额度。
+依次配置权限、快捷键、音色和默认语速。**翻译 API 可以跳过**，之后在 **设置 → 模型** 中填写自己的 DeepSeek API Key。
 
-默认模型为 `deepseek-flash`，关闭思考并流式返回；可在设置中修改模型名称，具体可用性以 API 账号为准。
+完整包从内置资源准备本地朗读，无需联网下载模型。已有配置会在更新时保留；删除应用本体不会自动清除配置。想重看引导，可进入 **设置 → 通用 → 使用引导**。
 
-### 3. 准备本地朗读
-
-在 **设置 → 模型** 下载独立 Kokoro 环境，或导入已经安装的 Speak11 环境。完成准备后，英文朗读可以离线使用。
-
-模型、Python 运行环境与依赖按需安装，**没有打包进应用源码**。首次准备建议至少预留 **2.5 GB** 空间；下载需要访问 Python、PyPI 和模型托管服务。实际占用会随依赖、缓存变化。
-
-### 4. 开启需要的权限
+### 3. 授予需要的权限
 
 | 权限 | 用途 |
 | :--- | :--- |
-| 辅助功能 | 跨应用读取你主动选中的文字。 |
-| 屏幕录制 | 仅在你主动发起截图翻译时截取指定区域。 |
+| 辅助功能 | 读取你主动选中的文字。 |
+| 屏幕录制 | 为主动发起的截图翻译截取区域。 |
 
-在 **设置 → 通用** 按需授权。已授权项目显示状态，不再显示授权按钮。ad-hoc 签名的应用升级后，系统可能要求重新授权。
+权限统一在 **设置 → 权限** 管理，已授权项目显示圆形勾选和“已授权”。更新后若授权失效，应用会定位到权限页；符合重装修复条件时，仅清理 Sonuvi 自身的旧辅助功能与屏幕录制记录一次，再重启返回，由你重新授权。
+
+### 4. 选中一段英文，开始听
+
+使用下方朗读快捷键，或点击划词菜单中的朗读按钮。准备完成后，英文合成和播放均在本机进行。翻译仍需网络、有效 API Key 与对应 API 额度。
 
 ## 常用快捷键
 
-以下为初始默认值，可在 **设置 → 快捷键** 修改；已有配置以应用内显示为准。
+以下为新安装的默认值。**已有自定义快捷键会保留**，可在设置或首次引导中录制修改。
 
-| 操作 | 快捷键 |
+| 操作 | 默认快捷键 |
 | :--- | :--- |
-| 翻译选中文字 | <kbd>Control</kbd> + <kbd>Option</kbd> + <kbd>T</kbd> |
-| 朗读选区／再次按下停止 | <kbd>Control</kbd> + <kbd>Option</kbd> + <kbd>R</kbd> |
-| 截图翻译 | <kbd>Control</kbd> + <kbd>Option</kbd> + <kbd>O</kbd> |
+| 翻译选中文字 | <kbd>Option</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> |
+| 朗读选区／再次按下停止 | <kbd>Option</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> |
+| 截图翻译 | <kbd>Option</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> |
 | 在翻译窗口发起翻译 | <kbd>Command</kbd> + <kbd>Return</kbd> |
 | 隐藏翻译窗口 | <kbd>Command</kbd> + <kbd>W</kbd> |
 
-**中文选区朗读**会先联网翻译成英文，再使用本地模型朗读；目前本地语音模型仅支持英文。
+## 数据留在哪里
 
-## 两条清楚的数据路径
-
-| 操作 | 数据如何处理 |
+| 操作 | 数据路径 |
 | :--- | :--- |
-| 选中文字 | 本机显示操作入口；仅选中不会发起翻译请求。 |
-| 主动翻译 | 原文发送至 DeepSeek 官方 API。 |
-| 英文朗读 | 环境准备完成后，在本机合成和播放。 |
-| 截图翻译 | 本机识别文字，再发送识别文字至 DeepSeek。 |
-| 使用统计 | 本机保存聚合计数，不上传统计记录。 |
-| API Key | 存储于 macOS 钥匙串。 |
+| 选中文字 | 本机显示入口，仅选中不会发送翻译请求。 |
+| 英文朗读 | 本机合成、播放，不上传朗读文本。 |
+| 主动翻译 | 原文发送至 DeepSeek API。 |
+| 中文选区朗读 | 先通过 DeepSeek 翻译成英文，再本地朗读。 |
+| 截图翻译 | 本机 OCR，识别文字发送至 DeepSeek。 |
+| 使用统计 | 本机保存聚合计数。 |
+| API Key | 保存在 macOS 钥匙串。 |
 
-AI 生成的释义、音标和例句可能有误。对准确性要求较高时，请结合权威词典或原始资料核对。
+## 当前边界
+
+- 本地朗读目前提供**英文**音色，不支持直接朗读中文；不支持 Intel Mac。
+- 划词兼容性取决于应用。无法直接取词时，可粘贴文字或使用截图翻译。
+- 预热和提前合成能减少等待，但首次准备、长句或设备负载较高时仍可能需要缓冲。
+- 当前为个人分享版本，使用 ad-hoc 签名，尚未公证、上架或提供自动更新。更换构建后，macOS 可能要求重新授权。
+- 轻量源码版保留联网准备与旧 Speak11 环境导入路径；**尚未完整验证全新设备上的联网下载全过程**。完整离线包不依赖这条路径。
+- 释义、音标和例句由 AI 生成，可能有误。
 
 ## 从源码构建
 
-需要 Apple Silicon Mac 与支持 macOS 26 SDK 的 Xcode Command Line Tools／Xcode。构建产物的最低运行系统为 macOS 13。
+需要 Apple Silicon Mac 和支持 macOS 26 SDK 的 Xcode／Command Line Tools。
 
 ```bash
 git clone https://github.com/davidai1024/Sonuvi.git
 cd Sonuvi
 
-# 编译应用
+# 获取固定版本的 uv 构建资源
+bash scripts/prepare-uv.sh
+
+# 编译、ad-hoc 签名并执行核心检查
 bash build.sh
 
-# 构建产物
 open build
 ```
 
-构建脚本会编译 Swift 源码、复制资源、签名并运行核心检查。默认使用 ad-hoc 签名。首次构建会从 Astral 官方 GitHub Release 下载固定版本 `uv 0.12.5`；已有 `Resources/uv` 时直接复用。许可证随源码提供，**构建应用时无需下载语音模型**。
+`prepare-uv.sh` 从 Astral 官方 GitHub Release 获取 `uv 0.12.5`。构建基础应用无需下载语音模型；完整离线包还需准备独立模型与运行环境，见 [打包说明](docs/packaging.md)。
 
-如需在多次构建间使用固定的本机签名身份：
+如已有固定签名身份，可设置 `MUSE_SIGNING_IDENTITY="你的代码签名身份" bash build.sh`。应用保持稳定的 bundle ID，不修改系统信任设置。
 
-```bash
-MUSE_SIGNING_IDENTITY="你的代码签名身份" bash build.sh
-```
+### 源码导览
 
-更多操作说明见 [使用说明](docs/使用说明.txt)。
-
-## 源码导览
-
-| 目录／文件 | 内容 |
+| 路径 | 内容 |
 | :--- | :--- |
-| `Sources/TranslateView.swift` | 紧凑翻译界面与词典卡片。 |
-| `Sources/Selection.swift` | 跨应用取词。 |
-| `Sources/SpeechPlayback.swift` | 原生音频播放与实时音量。 |
+| `Sources/TranslateView.swift` | 翻译、词典卡片、原文返回入口。 |
+| `Sources/Selection.swift` | 跨应用取词与兼容处理。 |
+| `Sources/SpeechPlayback.swift` | 音频播放与实时频谱。 |
 | `Sources/ReadingBar.swift` | 可拖动朗读浮条。 |
-| `Sources/FlowingDots.swift` | 统计与朗读中的点阵表现。 |
-| `Sources/Runtime.swift` | 本地语音环境管理。 |
-| `Resources/*.py` | Kokoro 服务、桥接与环境准备。 |
-| `Tests/` | 核心、编辑、OCR、网络和语音桥接检查。 |
-| `build.sh` | 本机构建入口。 |
+| `Sources/Onboarding.swift` | 首次引导、28 个音色与快捷键配置。 |
+| `Sources/PermissionLifecycle.swift` | 授权返回、重装识别、启动展示与重启协调。 |
+| `Sources/Runtime.swift` | 独立语音环境准备与预热。 |
+| `Sources/APIKeyField.swift` | 可退出编辑的原生安全输入框。 |
+| `Resources/*.py` | Kokoro 服务、分段合成与环境准备。 |
+| `Tests/` | 核心、权限、界面交互、取词、OCR 与语音检查。 |
+
+0.4.18 已通过 109 项核心、51 项界面交互、43 项权限相关检查，完整包通过签名和 DMG 完整性校验。这些检查不等同于所有应用、系统版本和设备的实测。
 
 ## 开源致谢
 
-Sonuvi 使用 SwiftUI 与 AppKit 独立实现界面和取词流程。它受以下项目启发，也使用了其中注明的代码或组件：
+Sonuvi 使用 SwiftUI 与 AppKit 实现界面和取词流程，并受以下项目启发或使用其组件：
 
-- **[Easydict](https://github.com/tisfeng/Easydict)**：翻译提示词复用并修改，词典／句子流程与紧凑查询布局参考。GPL-3.0。
-- **[Speak11](https://github.com/smcantab/speak11)**：本地自然朗读的参考项目，支持导入用户现有环境；完成独立环境准备后不再依赖 Speak11。
-- **[Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M)** 与 **[MLX conversion](https://huggingface.co/mlx-community/Kokoro-82M-bf16)**：本地英文语音合成。
-- **[uv](https://github.com/astral-sh/uv)**：Python 环境准备。MIT OR Apache-2.0。
+- [Easydict](https://github.com/tisfeng/Easydict)：翻译提示词复用并修改，参考词典／句子流程与查询布局。GPL-3.0。
+- [Speak11](https://github.com/smcantab/speak11)：本地自然朗读参考，支持导入已有环境；完成独立环境准备后不再依赖 Speak11。
+- [Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M) / [MLX conversion](https://huggingface.co/mlx-community/Kokoro-82M-bf16)：本地英文语音合成。
+- [uv](https://github.com/astral-sh/uv)：Python 环境准备。MIT OR Apache-2.0。
 
-上游来源、固定版本与许可证边界详见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。Sonuvi 不是 Easydict 或 Speak11 的官方发行版。
-
----
+上游版本、许可证与分发边界见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。Sonuvi 不是 Easydict 或 Speak11 的官方发行版。
 
 <div align="center">
 
-**让阅读更连贯，让语言更自然。**
+**让英文，自然读给你听。**
 
 源代码采用 [GPL-3.0](LICENSE) 许可。
 

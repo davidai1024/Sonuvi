@@ -13,3 +13,9 @@ Voice/
 Usage.json
 ready.json
 Resources/uv
+build-*/
+dist/
+dmg-work/
+.packaging-venv/
+BundledVoice/
+*.dmg
