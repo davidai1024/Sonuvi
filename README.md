@@ -14,7 +14,15 @@
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
-[界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
+[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-完整离线安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)
+
+**[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
+
+Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 约 468 MB
+
+内置本地模型、28 个英文音色与运行环境，无需另装 Python 或 Speak11。
+
+[下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
 
 </div>
 
@@ -113,11 +121,25 @@
 
 ## 开始使用
 
-### 1. 安装
+### 下载与安装
 
-完整离线 DMG 打开后，将 **Sonuvi.app 拖到 Applications**。更新时先退出旧版，由 Finder 提示替换、保留或取消，之后从「应用程序」打开。
+**[⬇ 下载最新版 Sonuvi 完整离线包（DMG）](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)**
 
-仓库提供源码与构建脚本，**不包含模型或完整 DMG 二进制**。完整包由维护者另行提供，源码构建方法见下方。
+| 下载前确认 | 说明 |
+| :--- | :--- |
+| 设备 | Apple Silicon Mac（M 系列芯片）；当前不支持 Intel Mac 或 Windows。 |
+| 系统 | macOS 26.2 或更新版本。 |
+| 安装包 | v0.4.18 约 468 MB，建议预留至少 3 GB 空间。 |
+| 本地朗读 | 已包含 Kokoro 模型、28 个英文音色和运行环境；无需再下载模型。 |
+| 翻译 | 需要联网及自己的 DeepSeek API Key；可以先跳过配置，只使用英文朗读。 |
+
+1. 点击上面的下载链接，保存 `Sonuvi-Mac-Offline.dmg`。
+2. 双击 DMG，将 **Sonuvi.app 拖到 Applications（应用程序）**。
+3. 从「应用程序」打开 Sonuvi，按引导完成设置。更新时先退出旧版，再拖入替换，已有配置会保留。
+
+完整安装包发布在 **[GitHub Releases](https://github.com/davidai1024/Sonuvi/releases)**。请下载 `.dmg` 附件；Release 页面自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是源码，不是安装包。每个版本同时提供 `SHA256SUMS.txt` 供校验。
+
+> 当前为个人分享版本，采用 ad-hoc 签名，尚未完成 Apple Developer ID 签名与公证。macOS 可能阻止首次打开；请先核对下载来源，并按系统「隐私与安全性」中的提示处理。无需关闭系统整体安全保护。当前不支持应用内自动更新，后续可从上方链接下载新版。
 
 ### 2. 完成首次引导
 
