@@ -49,3 +49,7 @@ python3 -m venv .packaging-venv
 DMG 内包含应用、Applications 链接、拖拽安装背景与说明。替换已安装应用由 Finder 的原生对话框处理。打包脚本会校验 DMG 完整性；分享前还需验证应用签名、断网朗读和目标设备兼容性。
 
 若分发 GPL 应用二进制，请一并提供与构建对应的完整源码及所需许可证。第三方资源的许可边界见仓库根目录 `THIRD_PARTY_NOTICES.txt`。
+
+## 准备并发布到 GitHub
+
+打包命令可附加 `--prepare-release --source-ref '<对应源码的完整提交 SHA>'`，自动从 DMG 读取版本并准备发布文件。随后双击仓库根目录的 **发布到GitHub.command**。已有 DMG 也可单独准备，详见 [通用发布流程](releasing.md)。

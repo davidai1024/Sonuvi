@@ -14,13 +14,15 @@
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
+<!-- sonuvi-download:start -->
 [![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-完整离线安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)
 
 **[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
 
-Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 约 468 MB
+Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 · 约 468 MB
 
 内置本地模型、28 个英文音色与运行环境，无需另装 Python 或 Speak11。
+<!-- sonuvi-download:end -->
 
 [下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
 
@@ -40,7 +42,7 @@ Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 约 468 MB
 - **声音有了形状**：16 列点阵根据实际音频频谱上下跳动，停顿时回落。
 - **完整离线包**：内置模型、音色和运行环境，接收者无需安装 Speak11 或自行搭建 Python。
 
-> 完整离线 DMG 约 **468 MB**，适用于 **Apple Silicon / macOS 26.2+**，建议至少预留 **3 GB** 空间。基础界面源码的最低部署版本为 macOS 13，与捆绑朗读环境的系统要求不同。
+> 下载最新版请使用页首按钮，版本、大小与最低系统要求以页首下载信息为准。建议至少预留 **3 GB** 空间。基础界面源码的最低部署版本与捆绑朗读环境的系统要求不同。
 
 ## 界面预览
 
@@ -128,8 +130,8 @@ Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 约 468 MB
 | 下载前确认 | 说明 |
 | :--- | :--- |
 | 设备 | Apple Silicon Mac（M 系列芯片）；当前不支持 Intel Mac 或 Windows。 |
-| 系统 | macOS 26.2 或更新版本。 |
-| 安装包 | v0.4.18 约 468 MB，建议预留至少 3 GB 空间。 |
+| 系统 | 最低 macOS 版本见页首下载信息。 |
+| 安装包 | 最新版本及大小见页首，建议预留至少 3 GB 空间。 |
 | 本地朗读 | 已包含 Kokoro 模型、28 个英文音色和运行环境；无需再下载模型。 |
 | 翻译 | 需要联网及自己的 DeepSeek API Key；可以先跳过配置，只使用英文朗读。 |
 
@@ -249,3 +251,7 @@ Sonuvi 使用 SwiftUI 与 AppKit 实现界面和取词流程，并受以下项�
 源代码采用 [GPL-3.0](LICENSE) 许可。
 
 </div>
+
+## 维护者发布
+
+打包后自动准备发布文件，再双击仓库根目录的 **发布到GitHub.command**。工具读取包内版本、计算校验值、恢复未完成上传，并在下载验证通过后更新页首信息。详见 [通用发布流程](docs/releasing.md)。

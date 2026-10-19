@@ -6,6 +6,7 @@ The HFS+ catalog layout follows Apple Technical Note TN1150.
 """
 import argparse
 import datetime
+import importlib.util
 import json
 import plistlib
 from pathlib import Path
@@ -111,7 +112,12 @@ def finalize_catalog(image, store_file):
 def main():
     global volume_name
     parser=argparse.ArgumentParser();parser.add_argument('--app',type=Path,required=True);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--workdir',type=Path,required=True)
-    args=parser.parse_args();app=args.app.resolve();output=args.output.resolve();work=args.workdir.resolve();work.mkdir(parents=True,exist_ok=True)
+    parser.add_argument('--prepare-release',action='store_true',help='DMG 完成后准备通用发布包，不上传')
+    parser.add_argument('--source-ref',help='与构建对应的完整源码提交 SHA')
+    parser.add_argument('--release-notes',type=Path,help='本次更新内容；默认取 CHANGELOG 对应版本')
+    args=parser.parse_args()
+    if args.prepare_release and not args.source_ref:parser.error('--prepare-release 需要 --source-ref，不能猜测构建对应的源码提交')
+    app=args.app.resolve();output=args.output.resolve();work=args.workdir.resolve();work.mkdir(parents=True,exist_ok=True)
     volume_name='Sonuvi ' + plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
     stage=work/'stage';stage.mkdir(exist_ok=True)
     staged=stage/'Sonuvi.app'
@@ -133,6 +139,14 @@ def main():
     subprocess.run(['/usr/bin/hdiutil','convert',str(raw),'-format','ULMO','-ov','-o',str(output)],check=True)
     subprocess.run(['/usr/bin/hdiutil','verify',str(output)],check=True)
     print(json.dumps({'dmg':str(output),'bytes':output.stat().st_size}))
+    if args.source_ref:
+        spec=importlib.util.spec_from_file_location('sonuvi_release',tools.parent/'scripts/release.py')
+        release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
+        release.record_build(output,staged,args.source_ref)
+    if args.prepare_release:
+        command=[sys.executable,str(tools.parent/'scripts/release.py'),'prepare',str(output),'--source-ref',args.source_ref]
+        if args.release_notes:command+=['--notes',str(args.release_notes.resolve())]
+        subprocess.run(command,check=True)
 
 
 if __name__=='__main__':main()

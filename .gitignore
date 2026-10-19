@@ -19,3 +19,5 @@ dmg-work/
 .packaging-venv/
 BundledVoice/
 *.dmg
+.release-local.json
+*.release-build.json
