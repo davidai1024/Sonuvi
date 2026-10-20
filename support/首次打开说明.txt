@@ -1,0 +1,23 @@
+Sonuvi v0.4.19 首次打开辅助脚本
+
+1. 从 Sonuvi 官网或官方 GitHub Release 下载并安装 v0.4.19。
+2. 将 Sonuvi.app 拖到“应用程序”。
+3. 解压辅助包，双击 Sonuvi-First-Open-v0.4.19.command。
+4. 脚本会打开“终端”，核对版本、原版程序摘要和应用完整性，然后清除 Sonuvi 的下载隔离标记并请求启动。
+5. 如应用属性需要管理员权限，macOS 会显示系统授权对话框；脚本不会记录密码。
+
+这个脚本只适用于本次官方 v0.4.19 安装包，离线即可运行。其他版本或被改动的应用不会被处理。它只清除该 Sonuvi.app 的 com.apple.quarantine 属性，不会修改系统整体的门禁设置，也不会自动授予辅助功能或屏幕录制权限。
+
+局限：下载的脚本本身也可能被 macOS 拦截，因此不能保证每台 Mac 都能直接双击运行。Apple 提供的手动路径是：先尝试打开 App，再到“系统设置 → 隐私与安全性 → 安全性 → 仍要打开”。如果提示 App 包含恶意软件、将损坏电脑，或本脚本报告完整性校验失败，请停止使用并联系开发者，不要按普通的首次打开提示处理。
+
+这不是 Developer ID 签名与 Apple 公证的替代方案。
+
+官方安装包：https://github.com/davidai1024/Sonuvi/releases/download/v0.4.19/Sonuvi-Mac-Offline.dmg
+官网：https://sonuvi.davidai1024.com
+Apple 说明：https://support.apple.com/zh-cn/102445
+
+English
+
+Install the official Sonuvi v0.4.19 in Applications, unzip this helper, and double-click Sonuvi-First-Open-v0.4.19.command. It verifies the exact release and code integrity, removes only this app's download quarantine flag, and requests a launch. It works offline. macOS may request administrator authorization.
+
+The helper itself may also be blocked by macOS. The supported manual route is System Settings → Privacy & Security → Open Anyway after attempting to open the app. Do not use this as a workaround for malware alerts or failed integrity checks. Accessibility and Screen Recording permissions remain under your control. This helper does not replace Developer ID signing and Apple notarization.
