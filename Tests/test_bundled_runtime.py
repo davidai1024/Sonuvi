@@ -28,6 +28,7 @@ class BundledRuntimeTests(unittest.TestCase):
             with patch.object(setup,'verify') as verify:self.install(root,bundle)
             info=json.loads((root/'ready.json').read_text())
             self.assertEqual(info['source'],'bundled')
+            self.assertEqual(info['runtimeRevision'], setup.RUNTIME_REVISION)
             self.assertTrue(Path(info['python']).is_relative_to(root))
             self.assertTrue(Path(info['model']).is_relative_to(root))
             self.assertNotIn(str(bundle),json.dumps(info))
@@ -52,5 +53,13 @@ class BundledRuntimeTests(unittest.TestCase):
             with patch.object(setup,'clone_tree') as clone:
                 with self.assertRaisesRegex(RuntimeError,'格式不支持'):self.install(parent/'target',bundle)
                 clone.assert_not_called()
+
+    def test_incompatible_dependencies_preserve_existing_installation(self):
+        with tempfile.TemporaryDirectory() as f:
+            parent=Path(f).resolve();bundle=self.fixture(parent);root=parent/'target';root.mkdir()
+            marker='{"source":"keep-existing"}';(root/'ready.json').write_text(marker)
+            with patch.object(setup,'verify',side_effect=ValueError('Binaries exceed macOS 14.0')):
+                with self.assertRaisesRegex(ValueError,'exceed'):self.install(root,bundle)
+            self.assertEqual((root/'ready.json').read_text(),marker)
 
 if __name__=='__main__':unittest.main()

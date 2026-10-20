@@ -7,6 +7,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'Resources'))
+from runtime_compat import validate_tree
 
 VOICES = tuple('af_heart af_bella af_nicole af_alloy af_aoede af_jessica af_kore af_nova af_river af_sarah af_sky am_adam am_echo am_eric am_fenrir am_liam am_michael am_onyx am_puck am_santa bf_emma bf_alice bf_isabella bf_lily bm_george bm_daniel bm_fable bm_lewis'.split())
 MODEL_REVISION = 'a71e4d38b236d968966a2002c4c895dbd12b1c3c'
@@ -21,6 +25,7 @@ def package(source_root, destination):
         raise RuntimeError('Use an independently owned environment')
     if (runtime/'pyvenv.cfg').exists():
         raise RuntimeError('Virtual environments cannot be bundled: standalone Python required')
+    validate_tree(runtime, '14.0')
     destination.mkdir(parents=True, exist_ok=False)
     subprocess.run(['/bin/cp', '-cR', str(runtime), str(destination/'runtime')], check=True)
     for path in sorted((destination/'runtime').rglob('__pycache__'), reverse=True):
@@ -54,7 +59,7 @@ def package(source_root, destination):
     for site in (destination/'runtime/lib').glob('python*/site-packages'):
         packages.extend({'name': d.metadata.get('Name', ''), 'version': d.version} for d in importlib.metadata.distributions(path=[str(site)]))
     (destination/'dependencies.json').write_text(json.dumps(sorted(packages, key=lambda x:x['name'].lower()), indent=2))
-    (destination/'manifest.json').write_text(json.dumps({'format':1,'architecture':'arm64','minimum_macos':'26.2','model':'mlx-community/Kokoro-82M-bf16','revision':MODEL_REVISION,'voices':list(VOICES)}, indent=2))
+    (destination/'manifest.json').write_text(json.dumps({'format':1,'architecture':'arm64','minimum_macos':'14.0','runtime_revision':'mlx-0.32.4-macos14-v1','model':'mlx-community/Kokoro-82M-bf16','revision':MODEL_REVISION,'voices':list(VOICES)}, indent=2))
     print(json.dumps({'payload':str(destination),'dependencies':len(packages),'voices':len(VOICES)}))
 
 

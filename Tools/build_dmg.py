@@ -130,7 +130,7 @@ def main():
     if not link.is_symlink():link.symlink_to('/Applications',target_is_directory=True)
     docs=stage/'.Documentation';docs.mkdir(exist_ok=True)
     for name in ('LICENSE','THIRD_PARTY_NOTICES.txt'):shutil.copy2(app/'Contents/Resources'/name,docs/name)
-    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。存在同名应用时，由 Finder 显示替换、保留或取消选项；选择替换后，从应用程序打开。首次使用会进入引导。更新后缺少权限时进入设置的权限页；本应用会自动清理自己的旧辅助功能和屏幕录制记录一次，然后自动重启返回权限页，由你重新授权。\n内置模型及28个英文音色。翻译 API 可以稍后配置。\nApple Silicon / macOS 26.2+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
+    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。存在同名应用时，由 Finder 显示替换、保留或取消选项；选择替换后，从应用程序打开。首次使用会进入引导。更新后缺少权限时进入设置的权限页；本应用会自动清理自己的旧辅助功能和屏幕录制记录一次，然后自动重启返回权限页，由你重新授权。\n内置模型及28个英文音色。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
     store(stage/'.DS_Store')
     raw=work/'Sonuvi-uncompressed.dmg'
     subprocess.run(['/usr/bin/hdiutil','makehybrid','-hfs','-hfs-volume-name',volume_name,'-hfs-openfolder',str(stage),'-ov','-o',str(raw),str(stage)],check=True)

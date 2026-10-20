@@ -12,6 +12,17 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from runtime_compat import validate_tree
+
+RUNTIME_REVISION = "mlx-0.32.4-macos14-v1"
+# Pin the macOS 14 artifacts explicitly: the same MLX version also ships
+# macOS 26 wheels, which a build on a newer Mac otherwise prefers.
+MLX_WHEELS = [
+    "https://files.pythonhosted.org/packages/69/b0/e726ce51e1b445e4ed08c2d0e036a01c7532f4d1a856328da546a6f883bd/mlx-0.32.4-cp312-cp312-macosx_14_0_arm64.whl#sha256=ff1d7be54758ea3a875b8fe54eff13bed17ad9566505e301f5d7851bf869680f",
+    "https://files.pythonhosted.org/packages/77/24/7e5b7ed5d28abacab4577c7a8dd1fca6e9058504f5f95ae4333c09420e2e/mlx_metal-0.32.4-py3-none-macosx_14_0_arm64.whl#sha256=8019b2db622599267d66cc168b2f0dbf5af929790a6c3b3913e00eabc42a7947",
+]
+
 MODEL_ID = "mlx-community/Kokoro-82M-bf16"
 MODEL_REVISION = "a71e4d38b236d968966a2002c4c895dbd12b1c3c"
 child = None
@@ -55,7 +66,8 @@ def clone_tree(source, destination):
 
 
 def verify(python, root):
-    code = "import importlib.util,sys; assert all(importlib.util.find_spec(n) for n in ['mlx_audio','misaki','soundfile','spacy']); print(sys.prefix)"
+    validate_tree(python.parent.parent, '14.0')
+    code = "import sys,mlx.core,misaki,soundfile,spacy; from mlx_audio.tts.utils import load_model; print(sys.prefix)"
     prefix = subprocess.check_output([str(python), "-I", "-c", code], text=True).strip()
     if not Path(prefix).resolve().is_relative_to(root.resolve()):
         raise RuntimeError("运行环境仍引用外部 Python，导入未完成")
@@ -147,7 +159,7 @@ def main():
             run([str(args.uv), "venv", "--managed-python", "--python", "3.12", str(stage / "runtime")], env)
             python = stage / "runtime/bin/python3"
             emit("dependencies", "正在安装本地语音依赖…")
-            run([str(args.uv), "pip", "install", "--python", str(python), "mlx-audio==0.5.9", "mlx==0.32.4", "misaki==0.8.4", "spacy==3.8.16", "soundfile==0.14.0", "phonemizer-fork", "espeakng_loader==0.2.4", "num2words", "loguru", "pysbd", "ftfy"], env)
+            run([str(args.uv), "pip", "install", "--python", str(python), "mlx-audio==0.5.9", *MLX_WHEELS, "misaki==0.8.4", "spacy==3.8.16", "soundfile==0.14.0", "phonemizer-fork", "espeakng_loader==0.2.4", "num2words", "loguru", "pysbd", "ftfy"], env)
             run([str(args.uv), "pip", "install", "--python", str(python), "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"], env)
             emit("model", "正在下载 Kokoro 模型，约 350MB…")
             run([str(python), "-c", "from huggingface_hub import snapshot_download;import sys; snapshot_download(sys.argv[1],revision=sys.argv[2],local_dir=sys.argv[3])", MODEL_ID, MODEL_REVISION, str(stage / "model")], env)
@@ -166,7 +178,7 @@ def main():
             stage.rename(final)
         else:
             final = stage
-        result = {"version": 1, "python": str(final / "runtime/bin/python3"), "model": str(final / "model"), "source": args.mode, "created": time.time()}
+        result = {"version": 1, "python": str(final / "runtime/bin/python3"), "model": str(final / "model"), "source": args.mode, "created": time.time(), "runtimeRevision": RUNTIME_REVISION}
         tmp = root / "ready.partial.json"
         tmp.write_text(json.dumps(result), encoding="utf-8")
         # A live service must release the old files before a marker switch.

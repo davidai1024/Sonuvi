@@ -1,6 +1,6 @@
-Sonuvi 0.4.18 使用说明
+Sonuvi 0.4.19 使用说明
 
-安装：完整离线 DMG 约 468 MB，需要 Apple Silicon Mac、macOS 26.2+，至少预留 3 GB 空间。退出旧版后，把 Sonuvi.app 拖到 Applications，按 Finder 提示替换，并从应用程序打开。
+安装：完整离线 DMG，需要 Apple Silicon Mac、macOS 14.0+，至少预留 3 GB 空间。退出旧版后，把 Sonuvi.app 拖到 Applications，按 Finder 提示替换，并从应用程序打开。
 
 首次使用：跟随引导完成权限、快捷键、音色与语速配置。翻译 API 可以跳过。完整包从内置资源准备英文朗读环境，无需额外安装 Speak11 或下载模型。
 

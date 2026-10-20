@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'Resources'))
+from runtime_compat import validate_tree
 REPO = 'davidai1024/Sonuvi'
 ASSET_NAME = 'Sonuvi-Mac-Offline.dmg'
 START = '<!-- sonuvi-download:start -->'
@@ -76,6 +78,7 @@ def inspect_app(app):
     require(voices['architecture'] == 'arm64', '此发布通道仅支持 Apple Silicon 完整离线包。')
     minimum = max((info['LSMinimumSystemVersion'], voices['minimum_macos']),
                   key=lambda v: tuple(map(int, v.split('.'))))
+    validate_tree(app, minimum)
     run(['/usr/bin/codesign', '--verify', '--deep', '--strict', app], stdout=subprocess.DEVNULL)
     signature = run(['/usr/bin/codesign', '-dv', app], stderr=subprocess.PIPE).stderr.decode()
     resources = app / 'Contents/Resources'

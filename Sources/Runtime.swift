@@ -2,7 +2,10 @@
 import Foundation
 import AppKit
 
-struct RuntimeInfo: Codable { let version: Int; let python: String; let model: String; let source: String }
+struct RuntimeInfo: Codable {
+    let version: Int; let python: String; let model: String; let source: String
+    let runtimeRevision: String?
+}
 
 @MainActor
 final class RuntimeManager: ObservableObject {
@@ -109,8 +112,17 @@ final class RuntimeManager: ObservableObject {
     }
     var availablePython: String? { Self.info?.python ?? (canImport ? NSHomeDirectory() + "/.local/share/speak11/venv/bin/python3" : nil) }
     func prepareBundledIfNeeded() {
-        if Self.info != nil { installAdditionalBundledVoices(); refresh(); return }
-        guard Self.info == nil, bundledRuntime != nil, !installing else { return }
+        if let current = Self.info {
+            let manifest = bundledRuntime.flatMap { try? Data(contentsOf: $0.appendingPathComponent("manifest.json")) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            if let revision = manifest?["runtime_revision"] as? String, current.runtimeRevision != revision,
+               !installing, !installationFailed {
+                install(importExisting: false, useBundled: true)
+                return
+            }
+            installAdditionalBundledVoices(); refresh(); return
+        }
+        guard bundledRuntime != nil, !installing else { return }
         install(importExisting: false, useBundled: true)
     }
     private func installAdditionalBundledVoices() {

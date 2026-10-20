@@ -20,7 +20,7 @@ arrow.lineWidth = 2; arrow.lineCapStyle = .round; arrow.lineJoinStyle = .round
 NSColor.black.withAlphaComponent(0.28).setStroke(); arrow.stroke()
 text("内置本地模型  ·  28 个英文音色", y: 86, size: 12, weight: .medium, alpha: 0.64)
 text("更新时先退出旧版，拖入后选择「替换」；再从「应用程序」打开", y: 60, size: 11, weight: .regular, alpha: 0.43)
-text("Apple Silicon  ·  macOS 26.2+", y: 25, size: 10, weight: .regular, alpha: 0.30)
+text("Apple Silicon  ·  macOS 14.0+", y: 25, size: 10, weight: .regular, alpha: 0.30)
 NSGraphicsContext.restoreGraphicsState()
 let output = URL(fileURLWithPath: CommandLine.arguments[1])
 try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)

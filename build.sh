@@ -33,8 +33,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.18</string>
-<key>CFBundleVersion</key><string>31</string>
+<key>CFBundleShortVersionString</key><string>0.4.19</string>
+<key>CFBundleVersion</key><string>32</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>
@@ -53,7 +53,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 if [[ -n "${SONUVI_BUNDLED_VOICE:-}" ]]; then
-  /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 26.2' "$app_dir/Contents/Info.plist"
+  /usr/bin/python3 Resources/runtime_compat.py "$app_dir" --minimum 14.0
+  /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 14.0' "$app_dir/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SonuviIncludesVoice bool true' "$app_dir/Contents/Info.plist"
 fi
 # Reuse an existing code-signing identity across updates when supplied.

@@ -9,7 +9,7 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.18-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.19-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
@@ -19,7 +19,7 @@
 
 **[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
 
-Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 · 约 468 MB
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.19
 
 内置本地模型、28 个英文音色与运行环境，无需另装 Python 或 Speak11。
 <!-- sonuvi-download:end -->
@@ -100,7 +100,13 @@ Apple Silicon（M 系列芯片） · macOS 26.2 及以上 · v0.4.18 · 约 468 
 | **应用例外** | 按应用控制是否显示划词菜单，开启即显示，关闭即隐藏。 |
 | **本地统计** | 翻译、朗读、词数、时长、应用、活跃天数、每日趋势与成就进度。 |
 
-## 0.4.18 更新了什么
+## 0.4.19 更新了什么
+
+完整离线包的最低系统要求降到 **macOS 14.0**。使用同一版本 MLX 的官方 macOS 14 依赖，保留本地离线朗读和全部 28 个英文音色；已有安装会自动更新语音运行环境。macOS 26 保留液态玻璃，较旧系统使用原生毛玻璃。
+
+构建已检查所有 arm64 原生依赖的最低部署版本；这不等同于已在 macOS 14、15 的真机完成回归测试。
+
+### 0.4.18 的主要改进
 
 这次仓库从 0.4.3 同步到 0.4.18，包含离线模型、28 个音色、首次使用引导、双语界面、朗读与截图性能优化，以及后续交互修复。
 
