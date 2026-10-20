@@ -9,7 +9,7 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.19-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.20-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
@@ -19,7 +19,7 @@
 
 **[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.19 · 约 457 MB
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.20
 
 内置本地模型、28 个英文音色与运行环境，无需另装 Python 或 Speak11。
 <!-- sonuvi-download:end -->
@@ -100,7 +100,13 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.19 · 约 457 
 | **应用例外** | 按应用控制是否显示划词菜单，开启即显示，关闭即隐藏。 |
 | **本地统计** | 翻译、朗读、词数、时长、应用、活跃天数、每日趋势与成就进度。 |
 
-## 0.4.19 更新了什么
+## 0.4.20 更新了什么
+
+DMG 安装窗口新增 **“首次打开修复”** 图标。先将 Sonuvi 拖入“应用程序”；如遇到无法验证或移到废纸篓的首次打开提示，可在同一安装窗口双击修复工具。工具会核对官方应用版本和完整性，仅清除 Sonuvi 的下载隔离标记，再请求启动应用。必要时由 macOS 请求管理员授权；辅助功能和屏幕录制仍由你在系统设置中授权。
+
+辅助工具本身也可能被系统拦截，此时仍需使用“隐私与安全性 → 仍要打开”。该工具不替代 Developer ID 签名和 Apple 公证。
+
+### 0.4.19 的兼容性改进
 
 完整离线包的最低系统要求降到 **macOS 14.0**。使用同一版本 MLX 的官方 macOS 14 依赖，保留本地离线朗读和全部 28 个英文音色；已有安装会自动更新语音运行环境。macOS 26 保留液态玻璃，较旧系统使用原生毛玻璃。
 

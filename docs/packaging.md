@@ -48,11 +48,11 @@ python3 -m venv .packaging-venv
 .packaging-venv/bin/pip install ds_store==1.3.3 mac_alias==2.2.3
 .packaging-venv/bin/python Tools/build_dmg.py \
   --app "$PWD/build-offline/Sonuvi.app" \
-  --output "$PWD/dist/Sonuvi-Mac-v0.4.19-Offline.dmg" \
+  --output "$PWD/dist/Sonuvi-Mac-v0.4.20-Offline.dmg" \
   --workdir "$PWD/dmg-work"
 ```
 
-DMG 内包含应用、Applications 链接、拖拽安装背景与说明。替换已安装应用由 Finder 的原生对话框处理。打包脚本会校验 DMG 完整性；分享前还需验证应用签名、断网朗读和目标设备兼容性。
+DMG 内包含应用、Applications 链接、拖拽安装背景、首次打开修复脚本与说明。修复脚本在应用完成最终签名后生成，自动固定该应用的版本和主程序 SHA256；生成后不要再修改或重签应用，否则应重新打包。脚本以真实 Finder 文件图标出现在安装窗口下方，并带有工具图标和隐藏扩展名。替换已安装应用由 Finder 的原生对话框处理。打包脚本会校验 DMG 完整性；分享前还需验证应用签名、断网朗读和目标设备兼容性。
 
 若分发 GPL 应用二进制，请一并提供与构建对应的完整源码及所需许可证。第三方资源的许可边界见仓库根目录 `THIRD_PARTY_NOTICES.txt`。
 

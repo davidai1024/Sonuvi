@@ -17,6 +17,7 @@ import sys
 
 from ds_store import DSStore
 from mac_alias import Alias, VolumeInfo, TargetInfo
+from package_first_open import package as package_first_open
 
 u16 = lambda b, o: struct.unpack_from('>H', b, o)[0]
 u32 = lambda b, o: struct.unpack_from('>I', b, o)[0]
@@ -32,7 +33,7 @@ def store(path, metadata=None):
     alias = Alias(volume=volume, target=target).to_bytes()
     with DSStore.open(str(path), 'w+') as d:
         d['.']['bwsp'] = dict(ShowToolbar=False, ShowSidebar=False, ShowStatusBar=False, ShowPathbar=False, ShowTabView=False,
-            ContainerShowSidebar=False, WindowBounds='{{220, 180}, {660, 472}}', PreviewPaneVisibility=False)
+            ContainerShowSidebar=False, WindowBounds='{{220, 180}, {660, 592}}', PreviewPaneVisibility=False)
         d['.']['icvp'] = dict(viewOptionsVersion=1, backgroundType=2, backgroundColorRed=0.05, backgroundColorGreen=0.05,
             backgroundColorBlue=0.05, backgroundImageAlias=alias, gridOffsetX=0.0, gridOffsetY=0.0,
             gridSpacing=100.0, arrangeBy='none', showIconPreview=True, showItemInfo=False, labelOnBottom=True,
@@ -41,6 +42,7 @@ def store(path, metadata=None):
         d['.']['vSrn'] = ('long', 1)
         d['Sonuvi.app']['Iloc'] = (175, 225)
         d['Applications']['Iloc'] = (485, 225)
+        d['首次打开修复.command']['Iloc'] = (330, 405)
 
 
 def finalize_catalog(image, store_file):
@@ -125,12 +127,16 @@ def main():
     subprocess.run(['/bin/cp','-cR',str(app),str(staged)],check=True)
     (stage/'.background').mkdir(exist_ok=True)
     tools=Path(__file__).resolve().parent
+    helper=stage/'首次打开修复.command'
+    helper_info=package_first_open(staged,helper)
+    (work/'first-open-helper.json').write_text(json.dumps(helper_info,ensure_ascii=False,indent=2)+'\n')
+    subprocess.run(['/usr/bin/swift','-module-cache-path',str(tools.parent/'build/module-cache'),str(tools/'RepairIcon.swift'),str(helper),str(stage/'.background/repair-icon.png')],check=True)
     subprocess.run(['/usr/bin/swift','-module-cache-path',str(tools.parent/'build/module-cache'),str(tools/'InstallerBackground.swift'),str(stage/'.background/install.png')],check=True)
     link=stage/'Applications'
     if not link.is_symlink():link.symlink_to('/Applications',target_is_directory=True)
     docs=stage/'.Documentation';docs.mkdir(exist_ok=True)
     for name in ('LICENSE','THIRD_PARTY_NOTICES.txt'):shutil.copy2(app/'Contents/Resources'/name,docs/name)
-    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。存在同名应用时，由 Finder 显示替换、保留或取消选项；选择替换后，从应用程序打开。首次使用会进入引导。更新后缺少权限时进入设置的权限页；本应用会自动清理自己的旧辅助功能和屏幕录制记录一次，然后自动重启返回权限页，由你重新授权。\n内置模型及28个英文音色。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
+    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。存在同名应用时，由 Finder 显示替换、保留或取消选项；选择替换后，从应用程序打开。首次使用会进入引导。\n如果提示无法验证或移到废纸篓，可在本安装窗口双击“首次打开修复”。工具先核对已安装的官方应用版本及完整性，再清除该应用的下载隔离标记并请求启动；必要时由系统请求管理员授权。辅助功能和屏幕录制仍需在系统设置中授权。工具本身也可能被系统拦截，此时请使用“系统设置 → 隐私与安全性 → 仍要打开”。真正的损坏或完整性不符不会被处理。\n内置模型及28个英文音色。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
     store(stage/'.DS_Store')
     raw=work/'Sonuvi-uncompressed.dmg'
     subprocess.run(['/usr/bin/hdiutil','makehybrid','-hfs','-hfs-volume-name',volume_name,'-hfs-openfolder',str(stage),'-ov','-o',str(raw),str(stage)],check=True)
