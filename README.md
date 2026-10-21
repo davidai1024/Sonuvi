@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.25-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.26-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载轻量版 · 16.1 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.25/Sonuvi-Mac.dmg)** · **[下载完整朗读版 · 462 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.25/Sonuvi-Mac-Offline.dmg)**
+**[下载翻译版 · 16.1 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.26/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 462 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.26/Sonuvi-Mac-Offline.dmg)**
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.25
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.26
 
 两个版本功能相同。轻量版未内置朗读模型，可随时在「设置 → 模型」免费下载约 505 MB 的本地语音资源；完整朗读版已内置模型、运行环境和 28 个英文音色，无需另行下载。模型准备好后，英文朗读免费且可离线使用。已有模型会保留，可单独更新。
 
-[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.25)
+[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.26)
 <!-- sonuvi-download:end -->
 
 [下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
@@ -99,6 +99,12 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.25
 | **快捷键录制** | 选中对应操作，按键预览同步点亮；松键保存，Esc 或点击外部取消。设置与引导使用同一组件。 |
 | **应用例外** | 按应用控制是否显示划词菜单，开启即显示，关闭即隐藏。 |
 | **本地统计** | 翻译、朗读、词数、时长、应用、活跃天数、每日趋势与成就进度。 |
+
+## 0.4.26
+
+- API Key 已配置时只显示脱敏字符，替换与删除收进更多菜单。
+- Kokoro 名称、就绪标记、试听和更多操作合并到一行。
+- 设置修改后立即生效并保存；新 Key 在回车或移开焦点时安全保存，Esc 取消替换。
 
 ## 0.4.25 与近期更新
 
