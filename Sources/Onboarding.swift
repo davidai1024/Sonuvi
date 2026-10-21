@@ -126,12 +126,13 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 42) {
                     introduction.frame(width: max(290, geometry.size.width * 0.34), alignment: .leading)
-                    OnboardingCenteredScroll { content }
+                    OnboardingCenteredScroll { content.onboardingFrame(.content) }
                         .id(state.step)
+                        .onboardingFrame(.viewport)
                 }.padding(.horizontal, 44).padding(.top, 58).padding(.bottom, 18)
                 footer.padding(.horizontal, 20).padding(.bottom, 18).padding(.top, 8)
             }.frame(width: geometry.size.width, height: geometry.size.height)
-        }.frame(minWidth: 900, minHeight: 600)
+        }.coordinateSpace(name: "SonuviOnboardingLayout").frame(minWidth: 900, minHeight: 600)
             .background((scheme == .dark ? Color(red: 0.025, green: 0.027, blue: 0.030) : Color(nsColor: .windowBackgroundColor)).opacity(0.94))
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: state.step)
             .onChange(of: state.step) { _ in model.stopSpeaking(); pressedGlyphs = [] }
@@ -149,7 +150,7 @@ struct OnboardingView: View {
                 .fixedSize(horizontal: false, vertical: true)
             LText(state.step.detail).font(.system(size: 14)).foregroundStyle(.secondary).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
-        }.frame(maxHeight: .infinity, alignment: .center).accessibilityElement(children: .contain)
+        }.onboardingFrame(.introduction).frame(maxHeight: .infinity, alignment: .center).accessibilityElement(children: .contain)
     }
     @ViewBuilder private var content: some View {
         VStack(spacing: 20) {
@@ -228,6 +229,7 @@ struct OnboardingView: View {
     }
     private var permissions: some View {
         VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
             permission("辅助功能", detail: "读取你主动选中的文字，用于划词翻译与朗读。", symbol: "accessibility", color: .blue, granted: model.permissionGranted, screen: false)
             Divider().opacity(0.35)
             permission("屏幕录制", detail: "仅在你主动截图翻译时，识别框选区域。", symbol: "viewfinder", color: .purple, granted: model.screenPermission, screen: true)
@@ -237,7 +239,9 @@ struct OnboardingView: View {
                 LText("只处理你主动选择的内容，不会持续录屏。权限状态会自动刷新，下一步由你决定。")
                     .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3)
             }.padding(.top, 4)
-            VStack(alignment: .leading, spacing: 10) {
+            }.onboardingFrame(.permissions)
+            if state.awaitingPermissionReturn {
+                VStack(alignment: .leading, spacing: 10) {
                     LText(model.permissionGranted && model.screenPermission ? "授权已就绪，点击「继续」前往下一步。" : "已在系统设置中开启，但状态仍未更新？")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     HStack(spacing: 12) {
@@ -249,9 +253,8 @@ struct OnboardingView: View {
                         .font(.system(size: 11)).foregroundStyle(.tertiary)
                         .opacity(model.permissionGranted && model.screenPermission ? 0 : 1)
                         .accessibilityHidden(model.permissionGranted && model.screenPermission)
-                }.frame(height: 88, alignment: .topLeading).padding(.top, 8)
-                    .opacity(state.awaitingPermissionReturn ? 1 : 0)
-                    .accessibilityHidden(!state.awaitingPermissionReturn)
+                }.fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+            }
         }.padding(.horizontal, 4)
     }
     private func shortcut(_ title: String, symbol: String, color: Color, index: Int) -> some View {
@@ -447,6 +450,23 @@ struct OnboardingView: View {
             if !voiceReady && !state.voiceDeferred { state.go(.voice); return }
             model.stopSpeaking(); state.finish(); complete()
         } else if let next = OnboardingStep(rawValue: state.step.rawValue + 1) { state.go(next) }
+    }
+}
+
+// Shared coordinates let the complete-window regression test measure the
+// visible permission group independently of optional recovery controls.
+enum OnboardingLayoutPart: Hashable { case introduction, permissions, content, viewport }
+struct OnboardingLayoutFrames: PreferenceKey {
+    static var defaultValue: [OnboardingLayoutPart: CGRect] = [:]
+    static func reduce(value: inout [OnboardingLayoutPart: CGRect], nextValue: () -> [OnboardingLayoutPart: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+private extension View {
+    func onboardingFrame(_ part: OnboardingLayoutPart) -> some View {
+        background(GeometryReader { proxy in
+            Color.clear.preference(key: OnboardingLayoutFrames.self, value: [part: proxy.frame(in: .named("SonuviOnboardingLayout"))])
+        })
     }
 }
 

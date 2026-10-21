@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 app_dir="${MUSE_BUILD_DIR:-$PWD/build}/Sonuvi.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$PWD/build/module-cache"
-/usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 \
+/usr/bin/swiftc -j 4 -swift-version 5 -O -target arm64-apple-macosx13.0 \
   -module-cache-path "$PWD/build/module-cache" Sources/*.swift Tests/*.swift \
   -framework AVFoundation -framework AppKit -framework SwiftUI -framework ApplicationServices \
   -framework Carbon -framework LocalAuthentication -framework Security -framework NaturalLanguage -framework Vision -framework ServiceManagement -framework CoreText -framework Charts -framework ScreenCaptureKit \
@@ -37,8 +37,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.27</string>
-<key>CFBundleVersion</key><string>40</string>
+<key>CFBundleShortVersionString</key><string>0.4.28</string>
+<key>CFBundleVersion</key><string>41</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>

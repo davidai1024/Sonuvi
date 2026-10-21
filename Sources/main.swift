@@ -975,6 +975,7 @@ else if CommandLine.arguments.contains("--voice-package-test") { Task { await ru
 else if CommandLine.arguments.contains("--self-test") { runSelfTests() }
 else if CommandLine.arguments.contains("--browser-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runBrowserIntegrationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--preference-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runPreferenceInteractionTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--onboarding-layout-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runOnboardingLayoutTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--translation-layout-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runTranslationLayoutTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--permission-test") { Task { @MainActor in await runPermissionTests(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionTests(); exit(0) }; app.run() } }
