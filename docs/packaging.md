@@ -1,6 +1,6 @@
-# 构建与完整离线包
+# 构建轻量应用与语音资源
 
-基础源码应用与完整离线包的区别在于是否包含 `Contents/Resources/BundledVoice`。源码仓库不提交模型、Python 运行环境、API Key 或用户数据。
+默认发布轻量应用，语音资源的独立打包和签名见 [模型更新](model-updates.md)。可选的完整离线包与轻量应用的区别在于是否包含 `Contents/Resources/BundledVoice`。源码仓库不提交模型、Python 运行环境、API Key 或用户数据。
 
 ## 基础应用
 
@@ -29,7 +29,7 @@ MLX 0.32.4 为不同 macOS 版本提供了多个二进制发行包。必须安�
 
 在有 GPU 的 Mac 上执行 `python3 Tests/verify_offline_voice.py --bundle '/absolute/path/to/BundledVoice' --report '/tmp/sonuvi-voice-check.json'`，验证隔离目录安装、断网推理和 28 个音色。macOS 14、15 真机回归需另行进行，不能用新系统测试代替。
 
-## 构建内置模型的应用
+## 可选：构建内置模型的应用
 
 ```bash
 SONUVI_BUNDLED_VOICE='/absolute/path/to/BundledVoice' \
@@ -48,7 +48,7 @@ python3 -m venv .packaging-venv
 .packaging-venv/bin/pip install ds_store==1.3.3 mac_alias==2.2.3
 .packaging-venv/bin/python Tools/build_dmg.py \
   --app "$PWD/build-offline/Sonuvi.app" \
-  --output "$PWD/dist/Sonuvi-Mac-v0.4.21-Offline.dmg" \
+  --output "$PWD/dist/Sonuvi-Mac-v0.4.22-Offline.dmg" \
   --workdir "$PWD/dmg-work"
 ```
 

@@ -260,9 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         if model.runtime.bundledRuntime != nil { model.runtime.prepareBundledIfNeeded() }
-        else if !model.runtime.ready {
-            if model.runtime.canImport { model.runtime.install(importExisting: true) }
-        }
+        else { model.runtime.checkForModelUpdates(quiet: true) }
     }
     func syncPermissionMonitors(reinstall: Bool = false, preserveGesture: Bool = false) {
         let granted = SelectionReader.trusted
@@ -886,7 +884,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-if CommandLine.arguments.contains("--self-test") { runSelfTests() }
+if CommandLine.arguments.contains("--voice-catalog-check") {
+    do { let value = try VoicePackage.bundled(); print(String(data: try JSONEncoder().encode(value), encoding: .utf8)!); exit(0) }
+    catch { fputs("Voice catalog verification failed\n", stderr); exit(1) }
+}
+else if CommandLine.arguments.contains("--voice-runtime-test") { Task { @MainActor in await runVoiceRuntimeTest() }; dispatchMain() }
+else if CommandLine.arguments.contains("--voice-package-test") { Task { await runVoicePackageTests(); exit(0) }; dispatchMain() }
+else if CommandLine.arguments.contains("--self-test") { runSelfTests() }
 else if CommandLine.arguments.contains("--preference-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runPreferenceInteractionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--translation-layout-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runTranslationLayoutTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--permission-test") { Task { @MainActor in await runPermissionTests(); exit(0) }; dispatchMain() }

@@ -10,7 +10,7 @@ enum OnboardingStep: Int, CaseIterable {
         "在任何应用中划选文字，即可中英互译，\n或用自然的声音，听一段英文。",
         "开启以下两项权限，让划词和截图翻译\n随时可用。授权后，请回到这里继续。",
         "保留默认组合，或录制你习惯的快捷键。\n无论在哪个应用，都能快速翻译与朗读。",
-        "内置 Kokoro 82M。8,200 万参数，\n在你的 Mac 上运行，英文朗读无需联网。",
+        "Kokoro 82M。下载一次语音资源，\n之后在你的 Mac 上离线朗读，模型可独立更新。",
         "中文译为英文，英文译为中文。\n连接你的 DeepSeek API，即可开始翻译。",
         "在任意应用里选中文字，按下快捷键。\nSonuvi 会一直在菜单栏，等你需要时出现。"
     ][rawValue] }
@@ -25,6 +25,8 @@ final class OnboardingState: ObservableObject {
     @Published private(set) var replaying: Bool
     @Published var error = ""
     var awaitingPermissionReturn: Bool { defaults.bool(forKey: "onboarding.permissionReturn") }
+    var voiceDeferred: Bool { defaults.bool(forKey: "onboarding.voiceDeferred") }
+    func deferVoice() { defaults.set(true, forKey: "onboarding.voiceDeferred"); go(.translation) }
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         replaying = defaults.bool(forKey: "onboarding.replaying")
@@ -299,12 +301,23 @@ struct OnboardingView: View {
                         LText(runtime.ready ? "模型已就绪。英文内容留在你的 Mac 上。" : runtime.status)
                             .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button(L10n.text("准备本地模型")) {
+                        Button(L10n.text(runtime.installationFailed ? "重试下载" : "下载本地模型")) {
                             runtime.preparePreferred()
                         }.disabled(voiceReady || runtime.installing)
                             .opacity(voiceReady || runtime.installing ? 0 : 1)
                             .accessibilityHidden(voiceReady || runtime.installing)
                     }.frame(height: 32)
+                    if runtime.installing, let progress = runtime.downloadProgress {
+                        ProgressView(value: progress).progressViewStyle(.linear)
+                        HStack {
+                            LText(runtime.downloadDetail).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Spacer(); Button(L10n.text("取消")) { runtime.cancel() }
+                        }
+                    } else if !voiceReady {
+                        LText("首次下载约 \(runtime.downloadSize)，包含运行环境与 28 个英文音色。更新 App 会保留已有模型。")
+                            .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !runtime.operationNotice.isEmpty { LText(runtime.operationNotice).font(.system(size: 11)).foregroundStyle(.secondary) }
                 }
             }
             card {
@@ -374,7 +387,7 @@ struct OnboardingView: View {
             VStack(spacing: 10) {
                 LText("选中文字，按 \(model.translateShortcut.label) 翻译").font(.system(size: 16, weight: .medium))
                 LText("\(model.readShortcut.label) 朗读   ·   \(model.ocrShortcut.label) 截图翻译").font(.system(size: 13)).foregroundStyle(.secondary)
-                LText(model.hasKey ? "翻译已配置，可以开始中英互译。" : "翻译尚未配置。你现在可以直接使用本地英文朗读。")
+                LText(!voiceReady ? "语音资源可稍后在模型设置中下载；翻译可单独配置。" : model.hasKey ? "翻译已配置，可以开始中英互译。" : "翻译尚未配置。你现在可以直接使用本地英文朗读。")
                     .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 10).lineLimit(2).frame(height: 42)
             }
         }.frame(maxWidth: .infinity)
@@ -406,6 +419,9 @@ struct OnboardingView: View {
             if state.step == .translation {
                 Button(L10n.text("稍后设置")) { apiKey = ""; state.go(.ready) }.buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 8)
             }
+            if state.step == .voice {
+                Button(L10n.text("稍后下载")) { state.deferVoice() }.buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 8)
+            }
             Button(action: advance) {
                 HStack(spacing: 10) {
                     LText(state.step == .ready ? "开始使用 Sonuvi" : state.step == .translation ? "保存并继续" : state.step == .welcome ? "开始设置" : "继续").font(.system(size: 13, weight: .semibold))
@@ -428,7 +444,7 @@ struct OnboardingView: View {
         if state.step == .ready {
             if !model.permissionGranted || !model.screenPermission { state.go(.permissions); return }
             if !model.hotkeysReady { state.go(.shortcuts); return }
-            if !voiceReady { state.go(.voice); return }
+            if !voiceReady && !state.voiceDeferred { state.go(.voice); return }
             model.stopSpeaking(); state.finish(); complete()
         } else if let next = OnboardingStep(rawValue: state.step.rawValue + 1) { state.go(next) }
     }

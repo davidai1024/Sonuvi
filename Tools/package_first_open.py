@@ -21,7 +21,7 @@ def package(app, destination):
     values = {
         'SUPPORTED_VERSION': version,
         'EXPECTED_SHA256': digest,
-        'DOWNLOAD_URL': 'https://github.com/davidai1024/Sonuvi/releases/download/v' + version + '/Sonuvi-Mac-Offline.dmg',
+        'DOWNLOAD_URL': 'https://github.com/davidai1024/Sonuvi/releases/download/v' + version + '/Sonuvi-Mac.dmg',
     }
     for name, value in values.items():
         text, count = re.subn(r"^" + name + r"='[^']*'$", name + "='" + value + "'", text, flags=re.M)

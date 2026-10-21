@@ -267,13 +267,19 @@ struct SettingsView: View {
                 rowDivider
                 SettingsRow(title: "模型", detail: "关闭思考，流式返回。", symbol: "cpu") { TextField(L10n.text("模型名称"), text: $model.modelName).textFieldStyle(.roundedBorder).frame(width: 180) }
             }
-            rows("本地朗读", detail: "内置自然英文语音，准备完成后无需联网。") {
+            rows("本地朗读", detail: "语音资源下载一次，之后无需联网；可独立更新。") {
                 SettingsRow(title: "Kokoro · 82M", detail: runtime.displayStatus, symbol: "waveform") {
                     if runtime.installing || runtime.removing { ProgressView().controlSize(.small) }
                     else { Image(systemName: runtime.ready ? "checkmark.circle.fill" : "arrow.down.circle")
                         .foregroundStyle(runtime.ready ? Color.green : Color.secondary) }
                 }
                 rowDivider
+                if runtime.installing, let progress = runtime.downloadProgress {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ProgressView(value: progress).progressViewStyle(.linear)
+                        LText(runtime.downloadDetail).font(MuseLayout.detail).foregroundStyle(.secondary)
+                    }.padding(16)
+                }
                 HStack(spacing: 10) {
                     if runtime.installing { Button(L10n.text("取消")) { runtime.cancel() } }
                     else if runtime.ready && model.selectedVoiceAvailable {
@@ -281,13 +287,18 @@ struct SettingsView: View {
                             model.speak("Welcome to Sonuvi. A natural voice, ready whenever you need it.", presentation: .settings)
                         }
                         if model.speaking { SpeechDots(meter: model.playback.meter) }
+                        if runtime.modelUpdateAvailable {
+                            Button(L10n.text("下载模型更新")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
+                        }
                     } else {
-                        Button(L10n.text(runtime.installationFailed || runtime.ready ? "修复朗读" : "准备本地朗读")) {
+                        Button(L10n.text(runtime.installationFailed ? "重试下载" : runtime.ready ? "修复朗读" : "下载本地模型")) {
                             model.stopSpeaking(); runtime.preparePreferred()
                         }
                     }
                     Spacer(minLength: 0)
                     Menu {
+                        Button(L10n.text(runtime.checkingForUpdates ? "正在检查…" : "检查模型更新")) { runtime.checkForModelUpdates() }
+                            .disabled(runtime.checkingForUpdates)
                         if runtime.ready {
                             Button(L10n.text("修复朗读")) { model.stopSpeaking(); runtime.preparePreferred() }
                             Button(L10n.text("查看模型文件")) { runtime.reveal() }
@@ -295,7 +306,7 @@ struct SettingsView: View {
                             Button(L10n.text("移除本地朗读环境…")) { confirmRemove() }
                         }
                         if runtime.installationFailed {
-                            Button(L10n.text("联网下载（备用）")) { model.stopSpeaking(); runtime.install(importExisting: false) }
+                            Button(L10n.text("重新下载语音资源")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
                         }
                         if runtime.bundledRuntime == nil && runtime.canImport {
                             Button(L10n.text("导入旧版 Speak11 环境")) { model.stopSpeaking(); runtime.install(importExisting: true) }
@@ -303,8 +314,12 @@ struct SettingsView: View {
                     } label: { Image(systemName: "ellipsis").frame(width: 24, height: 20) }
                         .menuStyle(.borderlessButton).frame(width: 32)
                         .help(L10n.text("更多操作"))
-                        .disabled(runtime.installing || (!runtime.ready && !runtime.installationFailed && (runtime.bundledRuntime != nil || !runtime.canImport)))
+                        .disabled(runtime.installing || runtime.removing)
                 }.frame(height: 32).disabled(runtime.removing || model.previewMode).padding(16)
+                if !runtime.ready && !runtime.installing {
+                    LText("首次下载约 \(runtime.downloadSize)，包含运行环境与 28 个英文音色。更新 App 会保留已有模型。")
+                        .font(MuseLayout.detail).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 16)
+                }
                 if !runtime.operationNotice.isEmpty {
                     LText(runtime.operationNotice).font(MuseLayout.detail).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 16)

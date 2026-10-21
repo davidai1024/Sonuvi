@@ -8,6 +8,7 @@ mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$PWD/build/mod
   -framework AVFoundation -framework AppKit -framework SwiftUI -framework ApplicationServices \
   -framework Carbon -framework LocalAuthentication -framework Security -framework NaturalLanguage -framework Vision -framework ServiceManagement -framework CoreText -framework Charts -framework ScreenCaptureKit \
   -o "$app_dir/Contents/MacOS/Sonuvi"
+cp Resources/VoiceCatalog.json Resources/VoicePublicKey.txt "$app_dir/Contents/Resources/"
 cp Resources/English.json "$app_dir/Contents/Resources/"
 cp Resources/*.py Resources/uv Resources/UV-LICENSE-* LICENSE THIRD_PARTY_NOTICES.txt "$app_dir/Contents/Resources/"
 cp Resources/Brand/AppIcon.icns Resources/Brand/MenuBar*.png "$app_dir/Contents/Resources/"
@@ -33,9 +34,9 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.21</string>
-<key>CFBundleVersion</key><string>34</string>
-<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>CFBundleShortVersionString</key><string>0.4.22</string>
+<key>CFBundleVersion</key><string>35</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>
 <key>NSMessage</key><string>translateService</string><key>NSPortName</key><string>Sonuvi</string>
@@ -56,6 +57,10 @@ if [[ -n "${SONUVI_BUNDLED_VOICE:-}" ]]; then
   /usr/bin/python3 Resources/runtime_compat.py "$app_dir" --minimum 14.0
   /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 14.0' "$app_dir/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SonuviIncludesVoice bool true' "$app_dir/Contents/Info.plist"
+fi
+if [[ -z "${SONUVI_BUNDLED_VOICE:-}" ]]; then
+  /usr/libexec/PlistBuddy -c 'Add :SonuviIncludesVoice bool false' "$app_dir/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :SonuviVoiceDelivery string download' "$app_dir/Contents/Info.plist"
 fi
 # Reuse an existing code-signing identity across updates when supplied.
 # Never broaden designated requirements or change the system trust store.

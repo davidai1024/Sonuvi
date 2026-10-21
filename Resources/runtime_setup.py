@@ -93,121 +93,134 @@ def main():
         ready = root / "ready.json"
         stage = root / ("installation-" + str(time.time_ns()) + ".partial")
         stage.mkdir()
-        env = os.environ.copy()
-        env["UV_PYTHON_INSTALL_DIR"] = str(root / "Python")
-        env["UV_CACHE_DIR"] = str(root / "Cache/uv")
-        env["HF_HOME"] = str(root / "Cache/huggingface")
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        if args.mode == "bundled":
-            if args.bundle is None:
-                raise RuntimeError("未找到内置朗读环境")
-            bundle = args.bundle.resolve()
-            manifest = json.loads((bundle / "manifest.json").read_text())
-            if manifest.get("format") != 1 or manifest.get("architecture") != "arm64":
-                raise RuntimeError("内置朗读环境格式不支持")
-            emit("runtime", "正在准备内置朗读环境，无需联网…")
-            clone_tree(bundle / "runtime", stage / "runtime")
-            clone_tree(bundle / "model", stage / "model")
-            python = stage / "runtime/bin/python3"
-            # Full packages contain a standalone CPython distribution, never
-            # a venv with links back to the build machine.
-            if (stage / "runtime/pyvenv.cfg").exists():
-                raise RuntimeError("内置 Python 必须是可迁移的独立环境")
-            for link in stage.rglob("*"):
-                if link.is_symlink() and not link.resolve().is_relative_to(stage):
-                    raise RuntimeError("内置环境含外部链接，无法在本机使用")
-        elif args.mode == "import":
-            seed = Path.home() / ".local/share/speak11/venv"
-            seed_python = seed / "bin/python3"
-            if not seed_python.exists():
-                raise RuntimeError("未检测到已安装的 Speak11，可选择联网安装")
-            info = json.loads(subprocess.check_output([str(seed_python), "-c", "import sys,json;print(json.dumps({'base':sys.base_prefix,'version':f'{sys.version_info.major}.{sys.version_info.minor}'}))"], text=True))
-            version = info["version"]
-            emit("runtime", "正在导入独立 Python 环境…")
-            runtime = stage / "runtime"
-            clone_tree(Path(info["base"]).resolve(), runtime)
-            site_source = seed / "lib" / ("python" + version) / "site-packages"
-            site_target = runtime / "lib" / ("python" + version) / "site-packages"
-            clone_tree(site_source, site_target)
-            # Verify no absolute symlink can keep a dependency on the seed.
-            for link in runtime.rglob("*"):
-                if link.is_symlink() and os.path.isabs(os.readlink(link)):
-                    target = link.resolve()
-                    if target.is_file():
-                        link.unlink(); shutil.copy2(target, link)
+        final = None
+        try:
+            env = os.environ.copy()
+            env["UV_PYTHON_INSTALL_DIR"] = str(root / "Python")
+            env["UV_CACHE_DIR"] = str(root / "Cache/uv")
+            env["HF_HOME"] = str(root / "Cache/huggingface")
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            if args.mode == "bundled":
+                if args.bundle is None:
+                    raise RuntimeError("未找到内置朗读环境")
+                bundle = args.bundle.resolve()
+                manifest = json.loads((bundle / "manifest.json").read_text())
+                if manifest.get("format") != 1 or manifest.get("architecture") != "arm64":
+                    raise RuntimeError("内置朗读环境格式不支持")
+                emit("runtime", "正在安装已下载的语音资源…" if manifest.get("package_version") else "正在准备内置朗读环境，无需联网…")
+                clone_tree(bundle / "runtime", stage / "runtime")
+                clone_tree(bundle / "model", stage / "model")
+                python = stage / "runtime/bin/python3"
+                # Full packages contain a standalone CPython distribution, never
+                # a venv with links back to the build machine.
+                if (stage / "runtime/pyvenv.cfg").exists():
+                    raise RuntimeError("内置 Python 必须是可迁移的独立环境")
+                for link in stage.rglob("*"):
+                    if link.is_symlink() and not link.resolve().is_relative_to(stage):
+                        raise RuntimeError("内置环境含外部链接，无法在本机使用")
+            elif args.mode == "import":
+                seed = Path.home() / ".local/share/speak11/venv"
+                seed_python = seed / "bin/python3"
+                if not seed_python.exists():
+                    raise RuntimeError("未检测到已安装的 Speak11，可选择联网安装")
+                info = json.loads(subprocess.check_output([str(seed_python), "-c", "import sys,json;print(json.dumps({'base':sys.base_prefix,'version':f'{sys.version_info.major}.{sys.version_info.minor}'}))"], text=True))
+                version = info["version"]
+                emit("runtime", "正在导入独立 Python 环境…")
+                runtime = stage / "runtime"
+                clone_tree(Path(info["base"]).resolve(), runtime)
+                site_source = seed / "lib" / ("python" + version) / "site-packages"
+                site_target = runtime / "lib" / ("python" + version) / "site-packages"
+                clone_tree(site_source, site_target)
+                # Verify no absolute symlink can keep a dependency on the seed.
+                for link in runtime.rglob("*"):
+                    if link.is_symlink() and os.path.isabs(os.readlink(link)):
+                        target = link.resolve()
+                        if target.is_file():
+                            link.unlink(); shutil.copy2(target, link)
+                        else:
+                            raise RuntimeError("运行环境含外部目录链接，请改用联网安装")
+                python = runtime / "bin/python3"
+                emit("model", "正在导入 Kokoro 模型和英文音色…")
+                snapshot = Path.home() / ".cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16/snapshots" / MODEL_REVISION
+                if not snapshot.exists():
+                    raise RuntimeError("没有找到完整 Kokoro 模型，可选择联网安装")
+                clone_tree(snapshot, stage / "model")
+                # Materialize all model symlinks so the original cache may be removed.
+                for link in (stage / "model").rglob("*"):
+                    if link.is_symlink():
+                        relative = link.relative_to(stage / "model")
+                        source = (snapshot / relative).resolve()
+                        link.unlink()
+                        if source.is_file():
+                            shutil.copy2(source, link)
+                        else:
+                            raise RuntimeError("模型链接不完整，请改用联网安装")
+            else:
+                emit("runtime", "正在下载独立 Python…")
+                run([str(args.uv), "python", "install", "3.12"], env)
+                run([str(args.uv), "venv", "--managed-python", "--python", "3.12", str(stage / "runtime")], env)
+                python = stage / "runtime/bin/python3"
+                emit("dependencies", "正在安装本地语音依赖…")
+                run([str(args.uv), "pip", "install", "--python", str(python), "mlx-audio==0.5.9", *MLX_WHEELS, "misaki==0.8.4", "spacy==3.8.16", "soundfile==0.14.0", "phonemizer-fork", "espeakng_loader==0.2.4", "num2words", "loguru", "pysbd", "ftfy"], env)
+                run([str(args.uv), "pip", "install", "--python", str(python), "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"], env)
+                emit("model", "正在下载 Kokoro 模型，约 350MB…")
+                run([str(python), "-c", "from huggingface_hub import snapshot_download;import sys; snapshot_download(sys.argv[1],revision=sys.argv[2],local_dir=sys.argv[3])", MODEL_ID, MODEL_REVISION, str(stage / "model")], env)
+            emit("verify", "正在检查环境与模型文件…")
+            verify(python, root)
+            pronunciation = next((stage / "runtime/lib").glob("python*/site-packages/espeakng_loader/espeak-ng-data"), None)
+            if pronunciation is not None:
+                clone_tree(pronunciation, root / "espeak-ng-data")
+            if not (stage / "model/config.json").is_file() or not (stage / "model/kokoro-v1_0.safetensors").is_file():
+                raise RuntimeError("模型文件不完整，请重新安装")
+            # Each installation has a permanent unique path: no venv relocation.
+            # The ready marker is atomic; previous working installations stay intact.
+            # Move only imported standalone distributions, never a generated venv.
+            if args.mode in ("import", "bundled"):
+                final = root / ("install-" + str(time.time_ns()))
+                stage.rename(final)
+            else:
+                final = stage
+            result = {"version": 1, "python": str(final / "runtime/bin/python3"), "model": str(final / "model"), "source": args.mode, "created": time.time(), "runtimeRevision": manifest.get("runtime_revision", RUNTIME_REVISION) if args.mode == "bundled" else RUNTIME_REVISION, "modelRevision": manifest.get("revision", MODEL_REVISION) if args.mode == "bundled" else MODEL_REVISION, "packageVersion": manifest.get("package_version") if args.mode == "bundled" else None}
+            tmp = root / "ready.partial.json"
+            tmp.write_text(json.dumps(result), encoding="utf-8")
+            # A live service must release the old files before a marker switch.
+            # On permission/timeout errors retain the previous working environment.
+            if (root / "tts.sock").exists():
+                try:
+                    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                        connection.settimeout(2); connection.connect(str(root / "tts.sock"))
+                        connection.sendall(b'{"action":"shutdown"}\n')
+                        response = json.loads(connection.recv(4096))
+                        if response.get("status") != "ok":
+                            raise RuntimeError("旧朗读引擎未能停止，请退出应用后重试")
+                    for _ in range(40):
+                        if not (root / "tts.sock").exists():
+                            break
+                        time.sleep(0.05)
                     else:
-                        raise RuntimeError("运行环境含外部目录链接，请改用联网安装")
-            python = runtime / "bin/python3"
-            emit("model", "正在导入 Kokoro 模型和英文音色…")
-            snapshot = Path.home() / ".cache/huggingface/hub/models--mlx-community--Kokoro-82M-bf16/snapshots" / MODEL_REVISION
-            if not snapshot.exists():
-                raise RuntimeError("没有找到完整 Kokoro 模型，可选择联网安装")
-            clone_tree(snapshot, stage / "model")
-            # Materialize all model symlinks so the original cache may be removed.
-            for link in (stage / "model").rglob("*"):
-                if link.is_symlink():
-                    relative = link.relative_to(stage / "model")
-                    source = (snapshot / relative).resolve()
-                    link.unlink()
-                    if source.is_file():
-                        shutil.copy2(source, link)
-                    else:
-                        raise RuntimeError("模型链接不完整，请改用联网安装")
-        else:
-            emit("runtime", "正在下载独立 Python…")
-            run([str(args.uv), "python", "install", "3.12"], env)
-            run([str(args.uv), "venv", "--managed-python", "--python", "3.12", str(stage / "runtime")], env)
-            python = stage / "runtime/bin/python3"
-            emit("dependencies", "正在安装本地语音依赖…")
-            run([str(args.uv), "pip", "install", "--python", str(python), "mlx-audio==0.5.9", *MLX_WHEELS, "misaki==0.8.4", "spacy==3.8.16", "soundfile==0.14.0", "phonemizer-fork", "espeakng_loader==0.2.4", "num2words", "loguru", "pysbd", "ftfy"], env)
-            run([str(args.uv), "pip", "install", "--python", str(python), "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"], env)
-            emit("model", "正在下载 Kokoro 模型，约 350MB…")
-            run([str(python), "-c", "from huggingface_hub import snapshot_download;import sys; snapshot_download(sys.argv[1],revision=sys.argv[2],local_dir=sys.argv[3])", MODEL_ID, MODEL_REVISION, str(stage / "model")], env)
-        emit("verify", "正在检查环境与模型文件…")
-        verify(python, root)
-        pronunciation = next((stage / "runtime/lib").glob("python*/site-packages/espeakng_loader/espeak-ng-data"), None)
-        if pronunciation is not None:
-            clone_tree(pronunciation, root / "espeak-ng-data")
-        if not (stage / "model/config.json").is_file() or not (stage / "model/kokoro-v1_0.safetensors").is_file():
-            raise RuntimeError("模型文件不完整，请重新安装")
-        # Each installation has a permanent unique path: no venv relocation.
-        # The ready marker is atomic; previous working installations stay intact.
-        # Move only imported standalone distributions, never a generated venv.
-        if args.mode in ("import", "bundled"):
-            final = root / ("install-" + str(time.time_ns()))
-            stage.rename(final)
-        else:
-            final = stage
-        result = {"version": 1, "python": str(final / "runtime/bin/python3"), "model": str(final / "model"), "source": args.mode, "created": time.time(), "runtimeRevision": RUNTIME_REVISION}
-        tmp = root / "ready.partial.json"
-        tmp.write_text(json.dumps(result), encoding="utf-8")
-        # A live service must release the old files before a marker switch.
-        # On permission/timeout errors retain the previous working environment.
-        if (root / "tts.sock").exists():
+                        raise RuntimeError("旧朗读引擎仍在退出，请稍后重试")
+                except (FileNotFoundError, ConnectionRefusedError):
+                    pass
+                except OSError:
+                    raise RuntimeError("无法停止旧朗读引擎，已保留原环境。请退出应用后重试")
+            os.replace(tmp, ready)
+            # Only generated, superseded installation folders are reclaimed.
+            # Existing working files are untouched until the atomic marker switch.
+            for previous in root.iterdir():
+                if previous.is_dir() and previous != final and (previous.name.startswith("install-") or (previous.name.startswith("installation-") and previous.name.endswith(".partial"))):
+                    shutil.rmtree(previous, ignore_errors=True)
+            emit("done", "内置朗读环境已就绪" if args.mode == "bundled" else "独立环境已就绪，不再依赖 Speak11")
+        finally:
+            # Cancellation or validation failure must not consume another full
+            # installation's disk space. Never remove a committed generation.
             try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                    connection.settimeout(2); connection.connect(str(root / "tts.sock"))
-                    connection.sendall(b'{"action":"shutdown"}\n')
-                    response = json.loads(connection.recv(4096))
-                    if response.get("status") != "ok":
-                        raise RuntimeError("旧朗读引擎未能停止，请退出应用后重试")
-                for _ in range(40):
-                    if not (root / "tts.sock").exists():
-                        break
-                    time.sleep(0.05)
-                else:
-                    raise RuntimeError("旧朗读引擎仍在退出，请稍后重试")
-            except (FileNotFoundError, ConnectionRefusedError):
-                pass
-            except OSError:
-                raise RuntimeError("无法停止旧朗读引擎，已保留原环境。请退出应用后重试")
-        os.replace(tmp, ready)
-        # Only generated, superseded installation folders are reclaimed.
-        # Existing working files are untouched until the atomic marker switch.
-        for previous in root.iterdir():
-            if previous.is_dir() and previous != final and (previous.name.startswith("install-") or (previous.name.startswith("installation-") and previous.name.endswith(".partial"))):
-                shutil.rmtree(previous, ignore_errors=True)
-        emit("done", "内置朗读环境已就绪" if args.mode == "bundled" else "独立环境已就绪，不再依赖 Speak11")
+                active = Path(json.loads(ready.read_text())["python"]).parent.parent.parent if ready.exists() else None
+            except (OSError, ValueError, KeyError):
+                active = final  # Be conservative when the marker cannot be read.
+            for abandoned in {stage, final} - {None, active}:
+                if abandoned.is_dir():
+                    shutil.rmtree(abandoned, ignore_errors=True)
+
 
 
 if __name__ == "__main__":

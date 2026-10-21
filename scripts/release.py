@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'Resources'))
 from runtime_compat import validate_tree
 REPO = 'davidai1024/Sonuvi'
-ASSET_NAME = 'Sonuvi-Mac-Offline.dmg'
+ASSET_NAME = 'Sonuvi-Mac.dmg'
 START = '<!-- sonuvi-download:start -->'
 END = '<!-- sonuvi-download:end -->'
 
@@ -71,10 +71,16 @@ def locked(directory):
 def inspect_app(app):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     require(info.get('CFBundleIdentifier') == 'com.wusir.musetranslate', '这不是 Sonuvi 安装包。')
-    require(info.get('SonuviIncludesVoice') is True, '必须使用包含本地模型的完整离线包。')
+    bundled = info.get('SonuviIncludesVoice') is True
+    require(bundled or info.get('SonuviVoiceDelivery') == 'download', '缺少语音资源分发配置。')
     version = str(info['CFBundleShortVersionString'])
     version_key(version)
-    voices = json.loads((app / 'Contents/Resources/BundledVoice/manifest.json').read_text())
+    if bundled:
+        voices = json.loads((app / 'Contents/Resources/BundledVoice/manifest.json').read_text())
+    else:
+        catalog = json.loads(run([app / 'Contents/MacOS/Sonuvi', '--voice-catalog-check'], stdout=subprocess.PIPE).stdout)
+        voices = {'architecture': catalog['architecture'], 'minimum_macos': catalog['minimumMacOS'], 'voices': catalog['voices']}
+        require(not (app / 'Contents/Resources/BundledVoice').exists(), '轻量包不应包含语音模型。')
     require(voices['architecture'] == 'arm64', '此发布通道仅支持 Apple Silicon 完整离线包。')
     minimum = max((info['LSMinimumSystemVersion'], voices['minimum_macos']),
                   key=lambda v: tuple(map(int, v.split('.'))))
@@ -86,7 +92,7 @@ def inspect_app(app):
             '安装包缺少许可证。')
     require(any((resources / 'Source').glob('*.zip')), '安装包缺少对应的源码归档。')
     return {'version': version, 'build': str(info['CFBundleVersion']), 'minimum_macos': minimum,
-            'architecture': 'arm64', 'voice_count': len(voices['voices']),
+            'architecture': 'arm64', 'voice_count': len(voices['voices']), 'voice_delivery': 'bundled' if bundled else 'download',
             'signature': 'ad-hoc' if 'Signature=adhoc' in signature else 'signed'}
 
 
@@ -143,10 +149,10 @@ def download_block(plan):
     url = 'https://github.com/' + plan['repository'] + '/releases/latest'
     return '\n'.join([
         START,
-        '[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-完整离线安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](' + url + '/download/' + ASSET_NAME + ')',
-        '', '**[点击直接下载 DMG](' + url + '/download/' + ASSET_NAME + ')** · [版本与更新说明](' + url + ')',
+        '[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-macOS_安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](' + url + '/download/' + plan.get('asset', ASSET_NAME) + ')',
+        '', '**[点击直接下载 DMG](' + url + '/download/' + plan.get('asset', ASSET_NAME) + ')** · [版本与更新说明](' + url + ')',
         '', 'Apple Silicon（M 系列芯片） · macOS ' + plan['minimum_macos'] + ' 及以上 · v' + plan['version'] + ' · 约 ' + str(round(plan['size'] / 1000000)) + ' MB',
-        '', '内置本地模型、' + str(plan['voice_count']) + ' 个英文音色与运行环境，无需另装 Python 或 Speak11。', END])
+        '', ('本地语音资源在应用内按需下载，包含 ' + str(plan['voice_count']) + ' 个英文音色；已有模型会保留，可独立更新。' if plan.get('voice_delivery') == 'download' else '内置本地模型、' + str(plan['voice_count']) + ' 个英文音色与运行环境，无需另装 Python 或 Speak11。'), END])
 
 
 def update_readme(text, plan):
@@ -163,12 +169,14 @@ def release_notes(plan, changes):
     base = 'https://github.com/' + plan['repository']
     signing = ('当前安装包为 ad-hoc 签名，尚未完成 Apple Developer ID 签名与公证。'
                if plan['signature'] == 'ad-hoc' else '应用签名检查通过；本工具不据此宣称已完成 Apple 公证。')
-    return f'''# Sonuvi v{plan['version']} · 完整离线版
+    edition = '轻量版' if plan.get('voice_delivery') == 'download' else '完整离线版'
+    voice_copy = (f"本地语音资源按需下载，包含 {plan['voice_count']} 个英文音色与完整运行环境。已有模型会保留，后续可独立更新。下载后可离线朗读；翻译需要联网及自己的 DeepSeek API Key。" if plan.get('voice_delivery') == 'download' else f"内置本地模型、{plan['voice_count']} 个英文音色与运行环境。英文朗读可离线；翻译需要联网及自己的 DeepSeek API Key。")
+    return f'''# Sonuvi v{plan['version']} · {edition}
 
-**[点击直接下载 Mac 安装包]({base}/releases/download/v{plan['version']}/{ASSET_NAME})**
+**[点击直接下载 Mac 安装包]({base}/releases/download/v{plan['version']}/{plan.get('asset', ASSET_NAME)})**
 
 Apple Silicon · macOS {plan['minimum_macos']} 及以上 · 约 {round(plan['size'] / 1000000)} MB。
-内置本地模型、{plan['voice_count']} 个英文音色与运行环境。英文朗读可离线；翻译需要联网及自己的 DeepSeek API Key。
+{voice_copy}
 
 ## 本次更新
 
@@ -225,7 +233,7 @@ def prepare(args):
 
 def validate_plan(path):
     plan = json.loads(path.read_text(encoding='utf-8'))
-    require(plan.get('schema') == 1 and plan['repository'] == REPO and plan['asset'] == ASSET_NAME,
+    require(plan.get('schema') == 1 and plan['repository'] == REPO and plan['asset'] in (ASSET_NAME, 'Sonuvi-Mac-Offline.dmg'),
             '发布清单格式或目标仓库不匹配。')
     version_key(plan['version'])
     require(re.fullmatch('[0-9a-f]{40}', plan['source_commit']), '源码提交格式不正确。')
@@ -233,9 +241,9 @@ def validate_plan(path):
     require(plan['architecture'] == 'arm64' and plan['signature'] in ('ad-hoc', 'signed'), '安装包平台或签名元信息不正确。')
     require(re.fullmatch(r'\d+(?:\.\d+){1,2}', plan['minimum_macos']), '最低系统版本格式不正确。')
     require(isinstance(plan['voice_count'], int) and plan['voice_count'] > 0, '音色数量无效。')
-    asset = path.parent / ASSET_NAME
+    asset = path.parent / plan['asset']
     require(asset.stat().st_size == plan['size'] and sha256(asset) == plan['sha256'], '安装包被修改或不完整，请重新构建新版本。')
-    require((path.parent / 'SHA256SUMS.txt').read_text().strip() == plan['sha256'] + '  ' + ASSET_NAME, '校验清单被修改。')
+    require((path.parent / 'SHA256SUMS.txt').read_text().strip() == plan['sha256'] + '  ' + plan['asset'], '校验清单被修改。')
     require(sha256(path.parent / 'release-notes.md') == plan['notes_sha256'], '发布说明已变化，请检查准备目录。')
     return plan
 
@@ -351,12 +359,12 @@ def publish(path, check_only=False, client=None, download_check=verify_download)
         release = existing_release(releases, plan['version'])
         if release is None:
             release = gh.api('repos/' + REPO + '/releases', 'POST', {
-                'tag_name': tag, 'target_commitish': plan['source_commit'], 'name': 'Sonuvi ' + tag + ' · 完整离线版',
+                'tag_name': tag, 'target_commitish': plan['source_commit'], 'name': 'Sonuvi ' + tag + (' · 轻量版' if plan.get('voice_delivery') == 'download' else ' · 完整离线版'),
                 'body': (path.parent / 'release-notes.md').read_text(), 'draft': True, 'prerelease': False})
         endpoint = 'repos/' + REPO + '/releases/' + str(release['id'])
         require(release['target_commitish'] == plan['source_commit'], '同版本发布指向不同源码，未覆盖。')
         require(not release.get('prerelease'), '该版本已作为测试版存在，未改动。')
-        files = [(path.parent / ASSET_NAME, plan['sha256']),
+        files = [(path.parent / plan['asset'], plan['sha256']),
                  (path.parent / 'SHA256SUMS.txt', sha256(path.parent / 'SHA256SUMS.txt'))]
         for file, expected in files:
             release = gh.api(endpoint)
@@ -383,7 +391,7 @@ def publish(path, check_only=False, client=None, download_check=verify_download)
                 'body': (path.parent / 'release-notes.md').read_text()})
         latest = gh.api('repos/' + REPO + '/releases/latest')
         require(latest['id'] == release['id'], '该版本不是 latest；没有修改 README。')
-        url = 'https://github.com/' + REPO + '/releases/latest/download/' + ASSET_NAME
+        url = 'https://github.com/' + REPO + '/releases/latest/download/' + plan['asset']
         download_check(url, plan['size'])
         remote = gh.api(readme_endpoint)
         old = base64.b64decode(remote['content']).decode()

@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.21-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.22-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-完整离线安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)
+[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-轻量安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac.dmg)
 
-**[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
+**[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.21 · 约 458 MB
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.22
 
-内置本地模型、28 个英文音色与运行环境，无需另装 Python 或 Speak11。
+轻量应用；本地语音资源在应用内按需下载，包含运行环境和 28 个英文音色。下载一次，之后可离线朗读；已有模型会保留，可单独更新。
 <!-- sonuvi-download:end -->
 
 [下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
@@ -40,7 +40,7 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.21 · 约 458 
 - **长文接着听**：优先按句子分段，播放当前段时提前合成下一段，减少等待。
 - **一个轻量浮条**：跨应用朗读时只显示可拖动的播放浮条，停止或读完即收起。
 - **声音有了形状**：16 列点阵根据实际音频频谱上下跳动，停顿时回落。
-- **完整离线包**：内置模型、音色和运行环境，接收者无需安装 Speak11 或自行搭建 Python。
+- **按需下载模型**：App 与语音资源分别发布。首次下载后可离线朗读，模型更新无需重装 App；已有模型继续复用。
 
 > 下载最新版请使用页首按钮，版本、大小与最低系统要求以页首下载信息为准。建议至少预留 **3 GB** 空间。基础界面源码的最低部署版本与捆绑朗读环境的系统要求不同。
 
@@ -100,7 +100,11 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.21 · 约 458 
 | **应用例外** | 按应用控制是否显示划词菜单，开启即显示，关闭即隐藏。 |
 | **本地统计** | 翻译、朗读、词数、时长、应用、活跃天数、每日趋势与成就进度。 |
 
-## 0.4.21 更新了什么
+## 0.4.22 更新了什么
+
+App 安装包不再捆绑语音模型和 Python 运行环境。首次使用可在引导或设置 → 模型中下载语音资源，显示下载进度，支持取消、失败重试和可用时续传。已有模型继续复用，不会因 App 更新而重复下载。模型页可独立检查和下载语音资源更新，失败时保留旧版本。
+
+资源目录由独立密钥签名，资源包以 SHA256 校验，通过验证并完成安装后才原子切换。开发者发布方法见 [模型独立更新](docs/model-updates.md)。
 
 启动时会静默检查 API Key 的实际读取权限。更新或重装后，如 macOS 需要重新授权，设置窗口会立即显示“翻译需要重新授权”，点击“允许访问 API Key”后再由系统确认。Key 不会被删除，不需要重新填写；没有配置过 Key 的用户不会收到重新授权提示。本地英文朗读不受影响。
 
@@ -137,29 +141,29 @@ DMG 内保留“首次打开修复”图标，但工具自身也可能被系统�
 
 ### 下载与安装
 
-**[⬇ 下载最新版 Sonuvi 完整离线包（DMG）](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)**
+**[⬇ 下载最新版 Sonuvi 轻量安装包（DMG）](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac.dmg)**
 
 | 下载前确认 | 说明 |
 | :--- | :--- |
 | 设备 | Apple Silicon Mac（M 系列芯片）；当前不支持 Intel Mac 或 Windows。 |
 | 系统 | 最低 macOS 版本见页首下载信息。 |
 | 安装包 | 最新版本及大小见页首，建议预留至少 3 GB 空间。 |
-| 本地朗读 | 已包含 Kokoro 模型、28 个英文音色和运行环境；无需再下载模型。 |
+| 本地朗读 | 首次在应用内下载 Kokoro、28 个英文音色和运行环境；已有模型无需重复下载。 |
 | 翻译 | 需要联网及自己的 DeepSeek API Key；可以先跳过配置，只使用英文朗读。 |
 
-1. 点击上面的下载链接，保存 `Sonuvi-Mac-Offline.dmg`。
+1. 点击上面的下载链接，保存 `Sonuvi-Mac.dmg`。
 2. 双击 DMG，将 **Sonuvi.app 拖到 Applications（应用程序）**。
 3. 从「应用程序」打开 Sonuvi，按引导完成设置。更新时先退出旧版，再拖入替换，已有配置会保留。
 
 完整安装包发布在 **[GitHub Releases](https://github.com/davidai1024/Sonuvi/releases)**。请下载 `.dmg` 附件；Release 页面自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是源码，不是安装包。每个版本同时提供 `SHA256SUMS.txt` 供校验。
 
-> 当前为个人分享版本，采用 ad-hoc 签名，尚未完成 Apple Developer ID 签名与公证。macOS 可能阻止首次打开；请先核对下载来源，并按系统「隐私与安全性」中的提示处理。无需关闭系统整体安全保护。当前不支持应用内自动更新，后续可从上方链接下载新版。
+> 当前为个人分享版本，采用 ad-hoc 签名，尚未完成 Apple Developer ID 签名与公证。macOS 可能阻止首次打开；请先核对下载来源，并按系统「隐私与安全性」中的提示处理。无需关闭系统整体安全保护。应用本体更新仍从上方链接下载；语音资源支持在模型页单独检查和下载更新。
 
 ### 2. 完成首次引导
 
 依次配置权限、快捷键、音色和默认语速。**翻译 API 可以跳过**，之后在 **设置 → 模型** 中填写自己的 DeepSeek API Key。
 
-完整包从内置资源准备本地朗读，无需联网下载模型。已有配置会在更新时保留；删除应用本体不会自动清除配置。想重看引导，可进入 **设置 → 通用 → 使用引导**。
+在引导中点击“下载本地模型”，或选择“稍后下载”后到设置 → 模型中准备。资源包约 505 MB，含完整运行环境与 28 个英文音色；无需另装 Python 或 Speak11。已有模型和配置会在 App 更新时保留；删除应用本体不会自动清除配置。想重看引导，可进入 **设置 → 通用 → 使用引导**。
 
 ### 3. 授予需要的权限
 
@@ -203,8 +207,8 @@ DMG 内保留“首次打开修复”图标，但工具自身也可能被系统�
 - 本地朗读目前提供**英文**音色，不支持直接朗读中文；不支持 Intel Mac。
 - 划词兼容性取决于应用。无法直接取词时，可粘贴文字或使用截图翻译。
 - 预热和提前合成能减少等待，但首次准备、长句或设备负载较高时仍可能需要缓冲。
-- 当前为个人分享版本，使用 ad-hoc 签名，尚未公证、上架或提供自动更新。更换构建后，macOS 可能要求重新授权。
-- 轻量源码版保留联网准备与旧 Speak11 环境导入路径；**尚未完整验证全新设备上的联网下载全过程**。完整离线包不依赖这条路径。
+- 当前为个人分享版本，使用 ad-hoc 签名，尚未公证或上架；应用本体没有自动更新，语音资源支持独立更新。更换构建后，macOS 可能要求重新授权。
+- 首次语音资源下载需要网络，下载后可离线使用。下载失败或取消时会保留原有模型，可重试；App 会校验资源签名、大小和 SHA256。
 - 释义、音标和例句由 AI 生成，可能有误。
 
 ## 从源码构建
