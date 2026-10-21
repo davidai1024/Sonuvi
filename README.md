@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.23-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.24-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载轻量版 · 16.5 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.23/Sonuvi-Mac.dmg)** · **[下载完整朗读版 · 462 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.23/Sonuvi-Mac-Offline.dmg)**
+**[下载轻量版 · 16.1 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.24/Sonuvi-Mac.dmg)** · **[下载完整朗读版 · 462 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.24/Sonuvi-Mac-Offline.dmg)**
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.23
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.24
 
 两个版本功能相同。轻量版未内置朗读模型，可随时在「设置 → 模型」免费下载约 505 MB 的本地语音资源；完整朗读版已内置模型、运行环境和 28 个英文音色，无需另行下载。模型准备好后，英文朗读免费且可离线使用。已有模型会保留，可单独更新。
 
-[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.23)
+[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.24)
 <!-- sonuvi-download:end -->
 
 [下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
@@ -100,7 +100,9 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.23
 | **应用例外** | 按应用控制是否显示划词菜单，开启即显示，关闭即隐藏。 |
 | **本地统计** | 翻译、朗读、词数、时长、应用、活跃天数、每日趋势与成就进度。 |
 
-## 0.4.23 与近期更新
+## 0.4.24 与近期更新
+
+安装窗口缩小为 600 × 422，底部只保留两行首次打开提示，右侧提供小齿轮设置入口。
 
 轻量安装包不内置语音模型和 Python 运行环境，完整朗读版则已内置全部语音资源。首次使用可在引导或设置 → 模型中下载语音资源，显示下载进度，支持取消、失败重试和可用时续传。已有模型继续复用，不会因 App 更新而重复下载。模型页可独立检查和下载语音资源更新，失败时保留旧版本。
 
@@ -108,7 +110,7 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.23
 
 启动时会静默检查 API Key 的实际读取权限。更新或重装后，如 macOS 需要重新授权，设置窗口会立即显示“翻译需要重新授权”，点击“允许访问 API Key”后再由系统确认。Key 不会被删除，不需要重新填写；没有配置过 Key 的用户不会收到重新授权提示。本地英文朗读不受影响。
 
-DMG 已移除首次打开修复脚本。若首次打开提示无法验证开发者或 Apple 无法检查，先点“完成”“好”或“取消”关闭提示，不要点“移到废纸篓”。双击安装窗口的“打开隐私与安全性”，在“安全性”区域找到 Sonuvi，点“仍要打开”，再按系统提示确认。该入口只是系统设置链接，不修改权限；若未自动定位，请手动进入“系统设置 → 隐私与安全性”并向下滚动。
+DMG 已移除首次打开修复脚本。若首次打开提示无法验证开发者或 Apple 无法检查，先点“完成”“好”或“取消”关闭提示，不要点“移到废纸篓”。双击安装窗口底部提示栏右侧的“双击打开设置”，在“安全性”区域找到 Sonuvi，点“仍要打开”，再按系统提示确认。该入口只是系统设置链接，不修改权限；若未自动定位，请手动进入“系统设置 → 隐私与安全性”并向下滚动。
 
 ### 0.4.19 的兼容性改进
 
