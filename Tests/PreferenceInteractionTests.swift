@@ -14,6 +14,44 @@ func runPreferenceInteractionTests() async {
     check(ShortcutSpec.read.label == "⌥⇧S" && ShortcutSpec.read.keyCode == UInt32(kVK_ANSI_S), "New read default matches saved user preference")
     check(ShortcutSpec.ocr.label == "⌥⇧R" && ShortcutSpec.ocr.keyCode == UInt32(kVK_ANSI_R), "New screenshot default matches saved user preference")
     check([ShortcutSpec.translate, .read, .ocr].allSatisfy { $0.modifiers == UInt32(optionKey | shiftKey) }, "All new defaults use Option Shift")
+    let suiteName = "Sonuvi.SettingsFixture." + UUID().uuidString
+    let fixtureDefaults = UserDefaults(suiteName: suiteName)!
+    defer { fixtureDefaults.removePersistentDomain(forName: suiteName) }
+    let preferences = AppModel(); preferences.preferenceDefaults = fixtureDefaults
+    preferences.modelName = "fixture-model"; preferences.voice = "bf_emma"; preferences.speed = 1.25
+    preferences.mouseLookup = false; preferences.autoRead = true
+    preferences.clipboardFallback = false; preferences.keepOnTop = false
+    preferences.excludedApps = ["fixture.app"]
+    let savedAppearance = preferences.appearance
+    preferences.appearance = .dark
+    check(fixtureDefaults.string(forKey: "modelName") == "fixture-model" && fixtureDefaults.string(forKey: "voice") == "bf_emma" && fixtureDefaults.double(forKey: "speed") == 1.25, "Model, voice and speed persist without a Save action")
+    check(!fixtureDefaults.bool(forKey: "mouseLookup") && fixtureDefaults.bool(forKey: "autoRead") && !fixtureDefaults.bool(forKey: "clipboardFallback") && !fixtureDefaults.bool(forKey: "keepOnTop"), "General and playback toggles persist immediately")
+    check(fixtureDefaults.stringArray(forKey: "excludedApps") == ["fixture.app"] && fixtureDefaults.string(forKey: "appearance") == AppearanceMode.dark.rawValue, "Appearance and app exclusions persist immediately")
+    preferences.modelName = "   "
+    check(fixtureDefaults.string(forKey: "modelName") == "fixture-model", "Editing an empty model name does not erase the last valid preference")
+    preferences.previewMode = true; preferences.speed = 1.8; preferences.voice = "af_heart"; preferences.appearance = savedAppearance
+    check(fixtureDefaults.double(forKey: "speed") == 1.25 && fixtureDefaults.string(forKey: "voice") == "bf_emma", "Preview settings never write user preferences")
+    preferences.previewMode = false
+    var loginCalls: [Bool] = []
+    preferences.applyLogin = { loginCalls.append($0) }
+    let initialLogin = preferences.loginEnabled
+    preferences.loginEnabled = !initialLogin
+    check(loginCalls == [!initialLogin], "Login switch applies as soon as it changes")
+    preferences.applyLogin = { _ in throw TranslateError.message("Fixture login rejection") }
+    preferences.loginEnabled = initialLogin
+    check(preferences.loginEnabled == !initialLogin && !preferences.preferenceError.isEmpty, "Rejected login change restores the switch and exposes the error")
+    let syntheticKey = "sk-fixture-only-1234567890"
+    check(AppModel.maskedKey(syntheticKey) == "sk-fix••••••••7890", "Saved key shows only its first six and last four characters")
+    check(AppModel.maskedKey("").isEmpty && AppModel.maskedKey("short") == "••••••••", "Empty and short keys never disclose their contents")
+    do {
+        try preferences.saveAPIKey(syntheticKey, store: { _ in })
+        let oldPreview = preferences.keyPreview
+        do { try preferences.saveAPIKey("replacement-fixture-0987654321", store: { _ in throw TranslateError.message("Fixture write rejection") }) }
+        catch { }
+        check(preferences.hasKey && preferences.keyPreview == oldPreview, "Failed replacement keeps the saved key presentation intact")
+        try preferences.saveAPIKey("replacement-fixture-0987654321", store: { _ in })
+        check(preferences.keyPreview == "replac••••••••4321", "Successful replacement updates the masked presentation")
+    } catch { check(false, "Synthetic key saves without accessing Keychain") }
     let model = AppModel(); model.previewMode = true
     model.excludedApps = ["test.blocked", "test.other"]
     check(!model.showsSelectionMenu(in: "test.blocked") && model.showsSelectionMenu(in: "test.allowed"), "Positive switch preserves previously hidden app settings")
@@ -149,6 +187,21 @@ func runPreferenceInteractionTests() async {
         try? await Task.sleep(nanoseconds: 80_000_000)
         check(apiField.currentEditor() == nil, "SwiftUI refresh does not steal API focus after \(action)")
     }
+    var commits = 0; var cancellations = 0
+    apiHost.rootView = APIKeyField(placeholder: "Auto-save fixture", text: binding,
+        onCommit: { commits += 1 }, onCancel: { cancellations += 1 })
+        .frame(width: 260, height: 28).frame(width: 400, height: 150)
+    try? await Task.sleep(nanoseconds: 100_000_000)
+    for action in ["escape", "outside", "return"] {
+        apiWindow.makeKey(); apiField.selectText(nil)
+        apiKey(kVK_ANSI_A, chars: "a")
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        if action == "outside" {
+            NSApp.postEvent(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 10, y: 10), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: apiWindow.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!, atStart: false)
+        } else { apiKey(action == "escape" ? kVK_Escape : kVK_Return, chars: action == "escape" ? "\u{1b}" : "\r") }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        check(cancellations == 1 && commits == (action == "escape" ? 0 : action == "outside" ? 1 : 2), "Auto-save key field commits once on Return/outside and cancels on Escape: \(action)")
+    }
     apiWindow.close()
     let savedLanguage = AppLocalization.shared.language
     for language in [AppLanguage.chinese, .english] {
@@ -162,6 +215,30 @@ func runPreferenceInteractionTests() async {
         try? await Task.sleep(nanoseconds: 120_000_000)
         check(abs(tip.view.fittingSize.height - size.height) < 1, "Welcome tip height stays stable after layout: \(language.rawValue)")
         fixture.close()
+    }
+    if let index = CommandLine.arguments.firstIndex(of: "--snapshots"), CommandLine.arguments.indices.contains(index + 1) {
+        let folder = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        model.settingsTab = "模型"; model.hasKey = true
+        model.keyPreview = AppModel.maskedKey("sk-fixture-only-1234567890")
+        for language in [AppLanguage.chinese, .english] {
+            AppLocalization.shared.language = language
+            for width in [CGFloat(740), CGFloat(980)] {
+                let host = NSHostingView(rootView: SettingsView(model: model))
+                let fixture = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 620), styleMask: [.borderless], backing: .buffered, defer: false)
+                fixture.isReleasedWhenClosed = false; fixture.contentView = host
+                fixture.appearance = NSAppearance(named: .darkAqua); fixture.orderBack(nil)
+                try? await Task.sleep(nanoseconds: 250_000_000); host.layoutSubtreeIfNeeded()
+                check(descendants(host).compactMap { $0 as? APIKeyField.Field }.isEmpty, "Saved-key settings contain no editable key field: \(language.rawValue) \(Int(width))")
+                if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    if let png = bitmap.representation(using: .png, properties: [:]) {
+                        try? png.write(to: folder.appendingPathComponent("settings-\(language.rawValue)-\(Int(width)).png"))
+                    }
+                }
+                fixture.close()
+            }
+        }
     }
     AppLocalization.shared.language = savedLanguage
     print("PASS: \(count) preference interaction checks")

@@ -6,13 +6,17 @@ struct APIKeyField: NSViewRepresentable {
     let placeholder: String
     @Binding var text: String
     var bordered = true
+    var onCommit: () -> Void = {}
+    var onCancel: () -> Void = {}
 
     final class Field: NSSecureTextField {
+        var cancelled = false
         private var monitor: Any?
         private var observer: NSObjectProtocol?
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         func beginEditingSession() {
             endEditingSession()
+            cancelled = false
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] event in
                 guard let self, let window = self.window, event.window === window,
                       self.currentEditor() != nil else { return event }
@@ -23,8 +27,9 @@ struct APIKeyField: NSViewRepresentable {
                     return event // The original click still reaches its control.
                 }
                 if event.keyCode == 53 || event.keyCode == 36 || event.keyCode == 76 {
+                    self.cancelled = event.keyCode == 53
                     window.makeFirstResponder(nil)
-                    return nil // Finish editing; neither save nor advance onboarding.
+                    return nil // Finish editing without advancing onboarding.
                 }
                 return event
             }
@@ -58,9 +63,11 @@ struct APIKeyField: NSViewRepresentable {
         func controlTextDidEndEditing(_ obj: Notification) {
             guard let field = obj.object as? Field else { return }
             parent.text = field.stringValue; field.endEditingSession()
+            if field.cancelled { parent.onCancel() } else { parent.onCommit() }
         }
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             if selector == #selector(NSResponder.cancelOperation(_:)) || selector == #selector(NSResponder.insertNewline(_:)) {
+                (control as? Field)?.cancelled = selector == #selector(NSResponder.cancelOperation(_:))
                 control.window?.makeFirstResponder(nil); return true
             }
             return false

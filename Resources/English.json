@@ -94,7 +94,7 @@
   "外观": "Appearance",
   "选择界面的深浅色，或跟随 macOS。": "Choose a light or dark appearance, or follow macOS.",
   "显示模式": "Appearance Mode",
-  "更改后立即预览。": "Changes appear immediately.",
+  "更改后立即预览。": "Changes apply and save automatically.",
   "使用习惯": "Behavior",
   "让划词翻译按照你的习惯工作。": "Make selected-text translation work your way.",
   "登录时启动": "Launch at Login",
@@ -527,5 +527,10 @@
   "语音资源含不支持的链接，未切换模型。": "The voice archive contains unsupported links. The model was not changed.",
   "语音资源内容不完整，未切换模型。": "The voice archive is incomplete. The model was not changed.",
   "已忽略较旧的语音资源，现有模型保持不变。": "Older voice resources were ignored. Your existing model is unchanged.",
-  "可用磁盘空间不足，请至少预留 3GB。": "Not enough disk space. Allow at least 3 GB."
+  "可用磁盘空间不足，请至少预留 3GB。": "Not enough disk space. Allow at least 3 GB.",
+  "替换成新的": "Replace with New Key",
+  "API Key 更多操作": "API Key Options",
+  "输入后按回车或点击其他位置，即刻保存。": "Press Return or click elsewhere to save automatically.",
+  "尚未下载": "Not Downloaded",
+  "更改后立即生效并保存。": "Changes apply and save automatically."
 }

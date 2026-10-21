@@ -23,11 +23,11 @@ final class AppModel: ObservableObject {
     private var readingTranslation = false
     var readingActive: Bool { speaking || readingTranslation }
     @Published var toast = ""
-    @Published var modelName = UserDefaults.standard.string(forKey: "modelName") ?? "deepseek-flash"
-    @Published var voice = UserDefaults.standard.string(forKey: "voice") ?? "af_heart"
-    @Published var speed = UserDefaults.standard.object(forKey: "speed") as? Double ?? 1.0
-    @Published var mouseLookup = UserDefaults.standard.object(forKey: "mouseLookup") as? Bool ?? true
-    @Published var autoRead = UserDefaults.standard.bool(forKey: "autoRead")
+    @Published var modelName = UserDefaults.standard.string(forKey: "modelName") ?? "deepseek-flash" { didSet { if !modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { persist(modelName.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "modelName") } } }
+    @Published var voice = UserDefaults.standard.string(forKey: "voice") ?? "af_heart" { didSet { persist(voice, forKey: "voice") } }
+    @Published var speed = UserDefaults.standard.object(forKey: "speed") as? Double ?? 1.0 { didSet { persist(speed, forKey: "speed") } }
+    @Published var mouseLookup = UserDefaults.standard.object(forKey: "mouseLookup") as? Bool ?? true { didSet { persist(mouseLookup, forKey: "mouseLookup") } }
+    @Published var autoRead = UserDefaults.standard.bool(forKey: "autoRead") { didSet { persist(autoRead, forKey: "autoRead") } }
     @Published var permissionGranted = false
     @Published var permissionMessage = ""
     @Published var permissionRepairing = false
@@ -44,19 +44,33 @@ final class AppModel: ObservableObject {
     var cancelOCR: (() -> Void)?
     @Published var recordingShortcut = false { didSet { if oldValue != recordingShortcut { onShortcutRecording?(recordingShortcut) } } }
     @Published var statusText = ""
-    @Published var appearance = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system { didSet { applyAppearance() } }
+    @Published var appearance = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system { didSet { applyAppearance(); persist(appearance.rawValue, forKey: "appearance") } }
     @Published var language = AppLocalization.shared.language {
         didSet {
             AppLocalization.shared.language = language
-            if !previewMode { UserDefaults.standard.set(language.rawValue, forKey: "appLanguage") }
+            persist(language.rawValue, forKey: "appLanguage")
             onLanguageChanged?()
         }
     }
     var onLanguageChanged: (() -> Void)?
-    @Published var loginEnabled = LoginManager.enabled
-    @Published var keepOnTop = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true { didSet { onWindowChanged?() } }
-    @Published var excludedApps = UserDefaults.standard.stringArray(forKey: "excludedApps") ?? []
-    @Published var clipboardFallback = UserDefaults.standard.object(forKey: "clipboardFallback") as? Bool ?? true
+    @Published var preferenceError = ""
+    @Published var keyPreview = ""
+    var preferenceDefaults = UserDefaults.standard
+    var applyLogin: (Bool) throws -> Void = LoginManager.apply
+    private var restoringLogin = false
+    @Published var loginEnabled = LoginManager.enabled {
+        didSet {
+            guard oldValue != loginEnabled, !previewMode, !restoringLogin else { return }
+            do { try applyLogin(loginEnabled); preferenceError = "" }
+            catch {
+                restoringLogin = true; loginEnabled = oldValue; restoringLogin = false
+                preferenceError = error.localizedDescription
+            }
+        }
+    }
+    @Published var keepOnTop = UserDefaults.standard.object(forKey: "keepOnTop") as? Bool ?? true { didSet { persist(keepOnTop, forKey: "keepOnTop"); onWindowChanged?() } }
+    @Published var excludedApps = UserDefaults.standard.stringArray(forKey: "excludedApps") ?? [] { didSet { persist(excludedApps, forKey: "excludedApps") } }
+    @Published var clipboardFallback = UserDefaults.standard.object(forKey: "clipboardFallback") as? Bool ?? true { didSet { persist(clipboardFallback, forKey: "clipboardFallback") } }
     @Published var translateShortcut = ShortcutSpec.load("translateShortcut", fallback: .translate)
     @Published var readShortcut = ShortcutSpec.load("readShortcut", fallback: .read)
     @Published var ocrShortcut = ShortcutSpec.load("ocrShortcut", fallback: .ocr)
@@ -87,9 +101,16 @@ final class AppModel: ObservableObject {
         guard let info = RuntimeManager.info else { return false }
         return FileManager.default.fileExists(atPath: info.model + "/voices/" + VoiceCatalog.option(voice).id + ".safetensors")
     }
+    private func persist(_ value: Any, forKey key: String) {
+        guard !previewMode else { return }
+        preferenceDefaults.set(value, forKey: key)
+    }
+    static func maskedKey(_ value: String) -> String {
+        guard !value.isEmpty else { return "" }
+        guard value.count > 14 else { return "••••••••" }
+        return String(value.prefix(6)) + "••••••••" + String(value.suffix(4))
+    }
     func saveVoicePreferences() {
-        UserDefaults.standard.set(voice, forKey: "voice")
-        UserDefaults.standard.set(speed, forKey: "speed")
         if !previewMode { runtime.warmup() }
     }
     func saveAPIKey(_ value: String, store: (String) throws -> Void = KeyStore.save) throws {
@@ -97,12 +118,15 @@ final class AppModel: ObservableObject {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         try store(value)
+        keyPreview = Self.maskedKey(value)
         hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
     }
     func authorizeAPIKeyAccess(read: (Bool) throws -> String = { try KeyStore.read(allowInteraction: $0) }) throws {
         guard !previewMode else { return }
         do {
-            guard !(try read(true)).isEmpty else { throw KeyAccessError.missing }
+            let value = try read(true)
+            guard !value.isEmpty else { throw KeyAccessError.missing }
+            keyPreview = Self.maskedKey(value)
             hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
         } catch {
             applyKeyAccessError(error)
@@ -111,7 +135,7 @@ final class AppModel: ObservableObject {
     }
     func deleteAPIKey() throws {
         guard !previewMode else { return }
-        try KeyStore.delete(); hasKey = false; keyAccessRequired = false; keyAccessIssue = ""
+        try KeyStore.delete(); keyPreview = ""; hasKey = false; keyAccessRequired = false; keyAccessIssue = ""
     }
 
     /// Probe actual readability, not just item existence. Never request a
@@ -119,11 +143,14 @@ final class AppModel: ObservableObject {
     func refreshAPIKeyAccess(read: (Bool) throws -> String = { try KeyStore.read(allowInteraction: $0) }) {
         guard !previewMode else { return }
         do {
-            guard !(try read(false)).isEmpty else { throw KeyAccessError.missing }
+            let value = try read(false)
+            guard !value.isEmpty else { throw KeyAccessError.missing }
+            keyPreview = Self.maskedKey(value)
             hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
         } catch { applyKeyAccessError(error) }
     }
     private func applyKeyAccessError(_ error: Error) {
+        keyPreview = ""
         keyAccessIssue = ""
         switch error {
         case KeyAccessError.authorizationRequired:
@@ -138,26 +165,10 @@ final class AppModel: ObservableObject {
     func applyAppearance() {
         switch appearance { case .system: NSApp.appearance = nil; case .light: NSApp.appearance = NSAppearance(named: .aqua); case .dark: NSApp.appearance = NSAppearance(named: .darkAqua) }
     }
-    func savePreferences() throws {
-        let bindings = [translateShortcut, readShortcut, ocrShortcut]
-        guard Set(bindings.map { "\($0.keyCode):\($0.modifiers)" }).count == 3 else { throw TranslateError.message("三个快捷键不能相同，请重新设置。") }
-        if let issue = onPreferences?() { throw TranslateError.message(issue) }
-        let defaults = UserDefaults.standard
-        defaults.set(modelName.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "modelName")
-        defaults.set(usage.enabled, forKey: "usageEnabled")
-        defaults.set(voice, forKey: "voice"); defaults.set(speed, forKey: "speed")
-        defaults.set(mouseLookup, forKey: "mouseLookup"); defaults.set(autoRead, forKey: "autoRead")
-        defaults.set(appearance.rawValue, forKey: "appearance"); defaults.set(keepOnTop, forKey: "keepOnTop")
-        defaults.set(excludedApps, forKey: "excludedApps"); defaults.set(clipboardFallback, forKey: "clipboardFallback")
-        translateShortcut.store("translateShortcut"); readShortcut.store("readShortcut"); ocrShortcut.store("ocrShortcut")
-        do { try LoginManager.apply(loginEnabled) }
-        catch { loginEnabled = LoginManager.enabled; throw TranslateError.message("其他设置已保存。" + error.localizedDescription) }
-    }
     func showsSelectionMenu(in bundleID: String) -> Bool { !excludedApps.contains(bundleID) }
     func setSelectionMenu(_ enabled: Bool, in bundleID: String) {
         excludedApps.removeAll { $0 == bundleID }
         if !enabled { excludedApps.append(bundleID) }
-        if !previewMode { UserDefaults.standard.set(excludedApps, forKey: "excludedApps") }
     }
     func applyShortcuts(_ bindings: [ShortcutSpec]) throws {
         guard bindings.count == 3, Set(bindings.map { "\($0.keyCode):\($0.modifiers)" }).count == 3 else {
@@ -206,7 +217,8 @@ final class AppModel: ObservableObject {
         }
         let kind = effectiveKind
         let dir = direction
-        let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = name.isEmpty ? "deepseek-flash" : name
         let cacheKey = "\(model)|\(dir.rawValue)|\(kind.rawValue)|\(text)"
         if let cached = cache[cacheKey] { usage.translation(text: text, kind: kind, app: sourceApp, cached: true); result = cached.0; word = cached.1; if autoRead || readAfter { speak(presentation: readAfter ? presentation : .inline) }; return }
         let id = currentID

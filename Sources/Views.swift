@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var runtime: RuntimeManager
     @State private var key = ""
+    @State private var replacingKey = false
     @State var message = ""
     @ObservedObject var usage: UsageStore
     @State var period = 7
@@ -41,11 +42,10 @@ struct SettingsView: View {
                         }.padding(.horizontal, MuseLayout.contentInset).padding(.bottom, 24)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }.id(tab)
-                    if (tab != "统计" && tab != "权限") || !message.isEmpty {
+                    if !message.isEmpty || !model.preferenceError.isEmpty {
                         HStack(spacing: 12) {
-                            LText(message).font(MuseLayout.detail).foregroundStyle(.secondary).lineLimit(2)
+                            LText(model.preferenceError.isEmpty ? message : model.preferenceError).font(MuseLayout.detail).foregroundStyle(.secondary).lineLimit(2)
                             Spacer(minLength: 8)
-                            if tab != "统计" { Button(L10n.text("保存设置")) { save() }.buttonStyle(.bordered).controlSize(.regular).keyboardShortcut("s", modifiers: .command) }
                         }.frame(minHeight: 32).padding(.horizontal, MuseLayout.contentInset).padding(.vertical, 10)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -189,7 +189,7 @@ struct SettingsView: View {
     var general: some View {
         Group {
             rows("外观", detail: "选择界面的深浅色，或跟随 macOS。") {
-                SettingsRow(title: "显示模式", detail: "更改后立即预览。", symbol: "circle.lefthalf.filled") { AppearanceSegments(value: $model.appearance) }
+                SettingsRow(title: "显示模式", detail: "更改后立即生效并保存。", symbol: "circle.lefthalf.filled") { AppearanceSegments(value: $model.appearance) }
                 rowDivider
                 SettingsRow(title: "界面语言", detail: "更改后立即生效，不影响中英互译方向。", symbol: "globe") {
                     Picker(L10n.text("界面语言"), selection: $model.language) {
@@ -258,64 +258,60 @@ struct SettingsView: View {
     var models: some View {
         Group {
             rows("DeepSeek", detail: "中英互译使用你的 API Key。") {
-                SettingsRow(title: "API Key", detail: model.keyAccessRequired ? "已保存，等待允许访问。" : model.hasKey ? "已安全保存在钥匙串。" : "尚未配置。", symbol: "key", stacked: true) {
-                    HStack {
-                        APIKeyField(placeholder: L10n.text(model.previewMode ? "外观预览，不填写 Key" : (model.hasKey ? "填写新的 Key 以替换" : "输入 API Key")), text: $key).frame(height: 28).disabled(model.previewMode)
-                        Button(L10n.text("删除")) { do { try model.deleteAPIKey(); message = "Key 已删除" } catch { message = error.localizedDescription } }.disabled(!model.hasKey || model.previewMode)
+                if model.hasKey && !replacingKey {
+                    SettingsRow(title: "API Key", detail: model.keyAccessRequired ? "已保存，等待允许访问。" : "已安全保存在钥匙串。", symbol: "key") {
+                        HStack(spacing: 10) {
+                            Text(model.keyPreview.isEmpty ? "••••••••" : model.keyPreview)
+                                .font(.system(size: 13, design: .monospaced)).foregroundStyle(.secondary)
+                            Menu {
+                                Button(L10n.text("替换成新的")) { key = ""; replacingKey = true; message = "" }
+                                Button(L10n.text("删除"), role: .destructive) {
+                                    do { try model.deleteAPIKey(); key = ""; message = "Key 已删除" }
+                                    catch { message = error.localizedDescription }
+                                }
+                            } label: { Image(systemName: "ellipsis").frame(width: 24, height: 20) }
+                                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+                                .accessibilityLabel(L10n.text("API Key 更多操作")).help(L10n.text("更多操作"))
+                                .disabled(model.previewMode)
+                        }
+                    }
+                } else {
+                    SettingsRow(title: "API Key", detail: "输入后按回车或点击其他位置，即刻保存。", symbol: "key", stacked: true) {
+                        HStack(spacing: 10) {
+                            APIKeyField(placeholder: L10n.text(model.previewMode ? "外观预览，不填写 Key" : "输入 API Key"), text: $key,
+                                onCommit: commitKey, onCancel: cancelKey)
+                                .frame(height: 28).disabled(model.previewMode)
+                            if replacingKey { Button(L10n.text("取消"), action: cancelKey) }
+                        }
                     }
                 }
                 rowDivider
-                SettingsRow(title: "模型", detail: "关闭思考，流式返回。", symbol: "cpu") { TextField(L10n.text("模型名称"), text: $model.modelName).textFieldStyle(.roundedBorder).frame(width: 180) }
+                SettingsRow(title: "模型", detail: "关闭思考，流式返回。", symbol: "cpu") { TextField(L10n.text("模型名称"), text: $model.modelName, onEditingChanged: { editing in if !editing { normalizeModelName() } }).onSubmit(normalizeModelName).textFieldStyle(.roundedBorder).frame(width: 180) }
             }
             rows("本地朗读", detail: "语音资源下载一次，之后无需联网；可独立更新。") {
-                SettingsRow(title: "Kokoro · 82M", detail: runtime.displayStatus, symbol: "waveform") {
-                    if runtime.installing || runtime.removing { ProgressView().controlSize(.small) }
-                    else { Image(systemName: runtime.ready ? "checkmark.circle.fill" : "arrow.down.circle")
-                        .foregroundStyle(runtime.ready ? Color.green : Color.secondary) }
-                }
-                rowDivider
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "waveform").font(.system(size: 17)).foregroundStyle(.secondary)
+                        .frame(width: 22, height: 28).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            LText("Kokoro · 82M").font(MuseLayout.sectionTitle)
+                            if runtime.installing || runtime.removing { ProgressView().controlSize(.small) }
+                            else { Image(systemName: runtime.ready ? "checkmark.circle.fill" : "arrow.down.circle")
+                                .foregroundStyle(runtime.ready ? Color.green : Color.secondary)
+                                .accessibilityLabel(L10n.text(runtime.ready ? "准备就绪" : "尚未下载")) }
+                            Spacer(minLength: 8)
+                            voiceModelActions
+                        }.frame(minHeight: 28)
+                        LText(runtime.displayStatus).font(MuseLayout.detail).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }.padding(.horizontal, 16).padding(.vertical, 12)
                 if runtime.installing, let progress = runtime.downloadProgress {
                     VStack(alignment: .leading, spacing: 6) {
                         ProgressView(value: progress).progressViewStyle(.linear)
                         LText(runtime.downloadDetail).font(MuseLayout.detail).foregroundStyle(.secondary)
-                    }.padding(16)
+                    }.padding(.horizontal, 16).padding(.bottom, 16)
                 }
-                HStack(spacing: 10) {
-                    if runtime.installing { Button(L10n.text("取消")) { runtime.cancel() } }
-                    else if runtime.ready && model.selectedVoiceAvailable {
-                        Button(L10n.text(model.speaking ? "停止试听" : "试听声音")) {
-                            model.speak("Welcome to Sonuvi. A natural voice, ready whenever you need it.", presentation: .settings)
-                        }
-                        if model.speaking { SpeechDots(meter: model.playback.meter) }
-                        if runtime.modelUpdateAvailable {
-                            Button(L10n.text("下载模型更新")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
-                        }
-                    } else {
-                        Button(L10n.text(runtime.installationFailed ? "重试下载" : runtime.ready ? "修复朗读" : "下载本地模型")) {
-                            model.stopSpeaking(); runtime.preparePreferred()
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    Menu {
-                        Button(L10n.text(runtime.checkingForUpdates ? "正在检查…" : "检查模型更新")) { runtime.checkForModelUpdates() }
-                            .disabled(runtime.checkingForUpdates)
-                        if runtime.ready {
-                            Button(L10n.text("修复朗读")) { model.stopSpeaking(); runtime.preparePreferred() }
-                            Button(L10n.text("查看模型文件")) { runtime.reveal() }
-                            Divider()
-                            Button(L10n.text("移除本地朗读环境…")) { confirmRemove() }
-                        }
-                        if runtime.installationFailed {
-                            Button(L10n.text("重新下载语音资源")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
-                        }
-                        if runtime.bundledRuntime == nil && runtime.canImport {
-                            Button(L10n.text("导入旧版 Speak11 环境")) { model.stopSpeaking(); runtime.install(importExisting: true) }
-                        }
-                    } label: { Image(systemName: "ellipsis").frame(width: 24, height: 20) }
-                        .menuStyle(.borderlessButton).frame(width: 32)
-                        .help(L10n.text("更多操作"))
-                        .disabled(runtime.installing || runtime.removing)
-                }.frame(height: 32).disabled(runtime.removing || model.previewMode).padding(16)
                 if !runtime.ready && !runtime.installing {
                     LText("首次下载约 \(runtime.downloadSize)，包含运行环境与 28 个英文音色。更新 App 会保留已有模型。")
                         .font(MuseLayout.detail).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 16)
@@ -330,6 +326,44 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+    private var voiceModelActions: some View {
+        HStack(spacing: 10) {
+        if runtime.installing { Button(L10n.text("取消")) { runtime.cancel() } }
+        else if runtime.ready && model.selectedVoiceAvailable {
+            Button(L10n.text(model.speaking ? "停止试听" : "试听声音")) {
+                model.speak("Welcome to Sonuvi. A natural voice, ready whenever you need it.", presentation: .settings)
+            }
+            if model.speaking { SpeechDots(meter: model.playback.meter) }
+            if runtime.modelUpdateAvailable {
+                Button(L10n.text("下载模型更新")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
+            }
+        } else {
+            Button(L10n.text(runtime.installationFailed ? "重试下载" : runtime.ready ? "修复朗读" : "下载本地模型")) {
+                model.stopSpeaking(); runtime.preparePreferred()
+            }
+        }
+        Menu {
+            Button(L10n.text(runtime.checkingForUpdates ? "正在检查…" : "检查模型更新")) { runtime.checkForModelUpdates() }
+                .disabled(runtime.checkingForUpdates)
+            if runtime.ready {
+                Button(L10n.text("修复朗读")) { model.stopSpeaking(); runtime.preparePreferred() }
+                Button(L10n.text("查看模型文件")) { runtime.reveal() }
+                Divider()
+                Button(L10n.text("移除本地朗读环境…")) { confirmRemove() }
+            }
+            if runtime.installationFailed {
+                Button(L10n.text("重新下载语音资源")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
+            }
+            if runtime.bundledRuntime == nil && runtime.canImport {
+                Button(L10n.text("导入旧版 Speak11 环境")) { model.stopSpeaking(); runtime.install(importExisting: true) }
+            }
+        } label: { Image(systemName: "ellipsis").frame(width: 24, height: 20) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+            .help(L10n.text("更多操作"))
+            .disabled(runtime.installing || runtime.removing)
+    }
+            .disabled(runtime.removing || model.previewMode)
     }
     var hotkeys: some View {
         Group {
@@ -379,14 +413,17 @@ struct SettingsView: View {
         let alert = NSAlert(); alert.messageText = L10n.text("移除独立朗读环境？"); alert.informativeText = L10n.text("本地朗读环境会移到废纸篓。之后可从内置资源重新准备；翻译和已保存的设置不受影响。"); alert.addButton(withTitle: L10n.text("移到废纸篓")); alert.addButton(withTitle: L10n.text("取消"))
         if alert.runModal() == .alertFirstButtonReturn { model.stopSpeaking(); runtime.remove() }
     }
-    func save() {
-        guard !model.previewMode else { message = "外观预览不保存真实设置。"; return }
-        do {
-            let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty { try model.saveAPIKey(value); key = "" }
-            if model.modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { model.modelName = "deepseek-flash" }
-            try model.savePreferences(); model.refreshStatus(); message = "已保存"
-        } catch { message = error.localizedDescription }
+    private func normalizeModelName() {
+        let value = model.modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.modelName = value.isEmpty ? "deepseek-flash" : value
+    }
+    private func cancelKey() { key = ""; replacingKey = false }
+    private func commitKey() {
+        guard !model.previewMode else { return }
+        let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        do { try model.saveAPIKey(value); key = ""; replacingKey = false; message = "" }
+        catch { message = error.localizedDescription }
     }
 }
 
