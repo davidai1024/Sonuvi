@@ -15,13 +15,13 @@
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-轻量安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac.dmg)
+[![下载 Mac 版](https://img.shields.io/badge/下载_Mac_版-macOS_安装包-238636?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac.dmg)
 
 **[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.22
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.22 · 约 16 MB
 
-轻量应用；本地语音资源在应用内按需下载，包含运行环境和 28 个英文音色。下载一次，之后可离线朗读；已有模型会保留，可单独更新。
+本地语音资源在应用内按需下载，包含 28 个英文音色；已有模型会保留，可独立更新。
 <!-- sonuvi-download:end -->
 
 [下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
