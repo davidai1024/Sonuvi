@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Sonuvi",
+  "version": "0.1.0",
+  "description": "__MSG_description__",
+  "default_locale": "zh_CN",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwmBXEVddsOZVfsbTKYsj0jMNsNJRWEfJcOXTxw0YphfOlh58w8QxH7wUYjD2pFfK0MAAFpRPFYcoaSlh3dKZecTvO+idyU0aaWH70n9JPbo0ECee01cDgTamUnlfu4EDBrT3XYtXcuVQbIHU/9X/0/fmjE9j3vfxiRduuriQze2w2gfTMRNIFVxINVybi+Wc1HihM9cEeVdNoIV1OMtX48Ofn/p/GFCNfTd0NjL/5mVVkD1c9aAWAKlrVfiSg9bDxpLGXmXtPMrKkjWeaebLLV3mSs5RVdOytAZe0qRZTDDHRFW8sOFr/lu2Zy4Mrz8TNgYZF+fwNk+iNgF3UF/s5wIDAQAB",
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Sonuvi",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}

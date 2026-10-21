@@ -279,3 +279,18 @@ Sonuvi 使用 SwiftUI 与 AppKit 实现界面和取词流程，并受以下项�
 ## 维护者发布
 
 打包后自动准备发布文件，再双击仓库根目录的 **发布到GitHub.command**。工具读取包内版本、计算校验值、恢复未完成上传，并在下载验证通过后更新页首信息。详见 [通用发布流程](docs/releasing.md)。
+
+
+## 浏览器主右键菜单（0.4.27 起）
+
+[浏览器扩展安装说明](BrowserExtension/README.md)。Chrome / Edge 可在主右键菜单中显示 **Sonuvi → 翻译所选文字 / 朗读所选文字**，无需进入 macOS“服务”子菜单。扩展为未上架商店的开发版，需首次手动加载一次；仅使用右键菜单和本机消息连接权限，不扫描网页、不读取 API Key。
+
+## 开发预览与服务去重
+
+预览构建请用 `SONUVI_PREVIEW=1 MUSE_BUILD_DIR=build-preview bash build.sh`，或用下面的命令从正式构建创建副本。预览不声明 macOS Services，避免截图、演示和测试副本重复出现在系统右键菜单里；正式安装版保留翻译和朗读两项服务。
+
+```bash
+python3 Tools/prepare_preview.py --source build/Sonuvi.app --output build-preview/SonuviPreview.app
+```
+
+键盘选中（Cmd+A、Shift＋方向键及其他选词快捷键）也会触发划词按钮，取词跟随当前焦点，不依赖鼠标位置。复制、粘贴、Esc 和 Sonuvi 自身的执行快捷键不会重新弹出旧选区。

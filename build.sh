@@ -15,6 +15,9 @@ cp Resources/Brand/AppIcon.icns Resources/Brand/MenuBar*.png "$app_dir/Contents/
 cp Resources/Brand/icon_128x128@2x.png "$app_dir/Contents/Resources/BrandIcon.png"
 /usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Tools/Relaunch.swift -framework AppKit -o "$app_dir/Contents/MacOS/SonuviRelaunch"
 /usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir/Contents/MacOS/SonuviRelaunch"
+/usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Sources/BrowserProtocol.swift Tools/BrowserBridge.swift -framework AppKit -framework CoreFoundation -o "$app_dir/Contents/MacOS/SonuviBrowserBridge"
+/usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir/Contents/MacOS/SonuviBrowserBridge"
+/bin/cp -R BrowserExtension "$app_dir/Contents/Resources/"
 # New build directories avoid mutating a previously signed payload.
 if [[ -d "$app_dir/Contents/Resources/BundledVoice" ]]; then
   printf 'Build directory already contains BundledVoice; choose a fresh MUSE_BUILD_DIR.\n' >&2
@@ -34,8 +37,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.26</string>
-<key>CFBundleVersion</key><string>39</string>
+<key>CFBundleShortVersionString</key><string>0.4.27</string>
+<key>CFBundleVersion</key><string>40</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>
@@ -61,6 +64,12 @@ fi
 if [[ -z "${SONUVI_BUNDLED_VOICE:-}" ]]; then
   /usr/libexec/PlistBuddy -c 'Add :SonuviIncludesVoice bool false' "$app_dir/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SonuviVoiceDelivery string download' "$app_dir/Contents/Info.plist"
+fi
+# Preview fixtures must not publish Services or claim the production identity.
+if [[ "${SONUVI_PREVIEW:-0}" == "1" ]]; then
+  /usr/libexec/PlistBuddy -c 'Delete :NSServices' "$app_dir/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.wusir.sonuvi.preview' "$app_dir/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :MusePreview bool true' "$app_dir/Contents/Info.plist"
 fi
 # Reuse an existing code-signing identity across updates when supplied.
 # Never broaden designated requirements or change the system trust store.

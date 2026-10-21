@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var onboardingWindow: NSWindow?
     var welcomeTip: NSPopover?
     var onboardingCompletedAt: Date?
-    let onboarding: OnboardingState = {
+    var onboarding: OnboardingState = {
         if Bundle.main.object(forInfoDictionaryKey: "SonuviOnboardingPreview") as? Bool == true {
             return OnboardingState(defaults: UserDefaults(suiteName: (Bundle.main.bundleIdentifier ?? "Sonuvi") + ".onboarding")!)
         }
@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var onboardingVisible: Bool { onboardingWindow?.isVisible == true }
     var bubble: BubblePanel?
     let readingBar = ReadingBarController()
+    let browserServer = BrowserMessageServer()
     let menuMotion = MenuMotion()
     var mouseMonitor: Any?
     var localMonitor: Any?
@@ -58,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var captureTask: Task<Void, Never>?
     var captureID = UUID()
     var selectionLookup = SelectionLookupState()
+    var keyboardSelection: (code: UInt16, pid: pid_t, action: KeyboardSelectionAction)?
+    var lastSelection: (pid: pid_t, text: String)?
     var didReceiveService = false
     var ocrTask: Task<Void, Never>?
     var ocrID = UUID()
@@ -146,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menuImage?.isTemplate = true; menuImage?.size = NSSize(width: 18, height: 18)
         status.button?.image = menuImage
         updateMenu()
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .leftMouseUp, .scrollWheel]) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .leftMouseDown, .leftMouseUp, .scrollWheel]) { [weak self] event in
             self?.model.usage.touch()
             if event.type == .leftMouseDown {
                 self?.mouseTask?.cancel(); self?.selectionLookup.invalidate()
@@ -157,6 +160,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         self.selectionLookup.begin(at: self.window.convertPoint(toScreen: event.locationInWindow))
                     }
                 }
+            }
+            if event.window === self?.window {
+                if event.type == .keyDown { self?.onSelectionKeyDown(event, local: true) }
+                if event.type == .keyUp { self?.onSelectionKeyUp(event, local: true) }
             }
             if event.type == .leftMouseUp { self?.onLocalMouseUp(event) }
             if event.type == .scrollWheel { self?.dismissSelectionBubble() }
@@ -208,6 +215,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showWindow()
             runNativeDiagnostics()
             return
+        }
+        if InstallationPermissionState.isInstalled(Bundle.main.bundleURL.path) {
+            browserServer.receive = { [weak self] request in
+                guard let self else { return BrowserReply(ok: false, error: L10n.text("请先打开 Sonuvi，再重试。")) }
+                guard self.model.browser.enabled, let token = self.model.browser.connectionToken, request.token == token else {
+                    return BrowserReply(ok: false, error: L10n.text("请先在 Sonuvi 设置中启用浏览器连接。"))
+                }
+                if request.action == .ping { return BrowserReply(ok: true, error: nil) }
+                guard self.startupPresentation.canPresent else { return BrowserReply(ok: false, error: L10n.text("Sonuvi 正在启动，请稍后重试。")) }
+                guard !self.needsOnboarding, !self.onboardingVisible else {
+                    self.showOnboarding()
+                    return BrowserReply(ok: false, error: L10n.text("请先完成 Sonuvi 的首次设置。"))
+                }
+                guard let text = request.text else { return BrowserReply(ok: false, error: L10n.text("请先选中文字。")) }
+                self.dismissSelectionBubble(); self.captureTask?.cancel(); self.model.setSource(text)
+                if request.action == .read {
+                    self.readingBar.anchor = NSEvent.mouseLocation
+                    if self.model.direction == .toChinese { self.model.speak(text, presentation: .floating) }
+                    else { self.model.translate(readAfter: true, presentation: .floating) }
+                } else { self.presentWindow(near: NSEvent.mouseLocation); self.model.translate() }
+                return BrowserReply(ok: true, error: nil)
+            }
+            browserServer.start()
         }
         model.runtime.startBackgroundWarmup { [weak self] in self?.model.voice ?? "af_heart" }
         NSApp.servicesProvider = self
@@ -276,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // AppKit invokes this on the main thread. Keep down/up handling ordered
         // and capture the event's position, not a later live cursor position.
         // Global monitors already exclude events delivered to Sonuvi itself.
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .scrollWheel]) { [weak self] event in
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .scrollWheel, .keyDown, .keyUp]) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 switch event.type {
@@ -284,6 +314,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.dismissSelectionBubble()
                     self.selectionLookup.begin(at: event.locationInWindow)
                 case .leftMouseUp: self.onMouseUp(event)
+                case .keyDown: self.onSelectionKeyDown(event)
+                case .keyUp: self.onSelectionKeyUp(event)
                 default: self.dismissSelectionBubble()
                 }
             }
@@ -439,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.setSource(text); showWindow(); model.translate()
     }
     func applicationWillTerminate(_ notification: Notification) {
+        browserServer.stop()
         permissionTimer?.invalidate(); usageTimer?.invalidate(); model.usage.persist()
         model.cancel(); model.stopSpeaking(); model.runtime.cancel(); model.runtime.stopBackgroundWarmup(); captureTask?.cancel(); ocrTask?.cancel(); mouseTask?.cancel()
         for monitor in [localMonitor, mouseMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
@@ -835,6 +868,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.showBubble(text: text, point: point, app: app.bundleIdentifier)
         }
     }
+    func onSelectionKeyDown(_ event: NSEvent, local: Bool = false) {
+        let action = KeyboardSelectionAction.resolve(keyCode: event.keyCode, flags: event.modifierFlags,
+            shortcuts: [model.translateShortcut, model.readShortcut, model.ocrShortcut])
+        guard action != .ignore else { return }
+        let pid = local ? ProcessInfo.processInfo.processIdentifier : NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard let pid else { return }
+        dismissSelectionBubble()
+        keyboardSelection = (event.keyCode, pid, action)
+    }
+    func onSelectionKeyUp(_ event: NSEvent, local: Bool = false) {
+        guard let gesture = keyboardSelection, gesture.code == event.keyCode else { return }
+        keyboardSelection = nil
+        guard gesture.action == .select || gesture.action == .inspect else { return }
+        guard model.mouseLookup, !model.ocrBusy, !model.recordingShortcut, !needsOnboarding, !onboardingVisible else { return }
+        if local {
+            guard window.isKeyWindow else { return }
+        } else {
+            guard allowsSelectionLookup(pid: gesture.pid) else { return }
+        }
+        let request = selectionLookup.keyboard(pid: gesture.pid)
+        let fallback = NSEvent.mouseLocation
+        mouseTask?.cancel()
+        mouseTask = Task { [weak self] in
+            guard let self else { return }
+            @MainActor func valid() -> Bool {
+                if local { return self.window.isKeyWindow && self.model.mouseLookup && self.selectionLookup.accepts(request, frontPID: gesture.pid) }
+                return self.allowsSelectionLookup(pid: gesture.pid) && self.selectionLookup.accepts(request, frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier)
+            }
+            let text = await SelectionLookup.resolve(read: {
+                if local {
+                    guard let editor = self.window.firstResponder as? NSTextView else { return nil }
+                    return LocalTextSelection.selectedText(in: editor)
+                }
+                // Keyboard selection follows focus, even when the pointer is
+                // over another control. No clipboard fallback or simulated Copy.
+                return await SelectionReader.fromAccessibility(pid: gesture.pid)
+            }, isValid: valid, delays: local ? [80_000_000] : gesture.action == .select ? SelectionReader.accessibilityProfile(pid: gesture.pid).retryDelays : [180_000_000, 240_000_000])
+            guard let text, !Task.isCancelled, valid() else { return }
+            if gesture.action == .inspect, self.lastSelection?.pid == gesture.pid, self.lastSelection?.text == text { return }
+            var point = fallback
+            if local, let editor = self.window.firstResponder as? NSTextView {
+                let rect = editor.firstRect(forCharacterRange: editor.selectedRange(), actualRange: nil)
+                if !rect.isEmpty { point = NSPoint(x: rect.minX, y: rect.minY) }
+            } else if let anchor = await SelectionReader.selectionAnchor(pid: gesture.pid) { point = anchor }
+            guard !Task.isCancelled, valid() else { return }
+            self.showBubble(text: text, point: point, app: local ? self.model.sourceApp : NSRunningApplication(processIdentifier: gesture.pid)?.bundleIdentifier, local: local)
+        }
+    }
     @objc func translateService(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
         receiveService(pasteboard, read: false, error: error)
     }
@@ -864,6 +945,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bubble?.orderOut(nil)
     }
     func showBubble(text: String, point: NSPoint, app: String?, local: Bool = false) {
+        lastSelection = (local ? ProcessInfo.processInfo.processIdentifier : NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, text)
         if bubble == nil {
             bubble = BubblePanel(contentRect: NSRect(x: 0, y: 0, width: 86, height: 42), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             bubble?.isOpaque = false; bubble?.backgroundColor = .clear; bubble?.hasShadow = true
@@ -891,10 +973,11 @@ if CommandLine.arguments.contains("--voice-catalog-check") {
 else if CommandLine.arguments.contains("--voice-runtime-test") { Task { @MainActor in await runVoiceRuntimeTest() }; dispatchMain() }
 else if CommandLine.arguments.contains("--voice-package-test") { Task { await runVoicePackageTests(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--self-test") { runSelfTests() }
+else if CommandLine.arguments.contains("--browser-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runBrowserIntegrationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--preference-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runPreferenceInteractionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--translation-layout-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runTranslationLayoutTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--permission-test") { Task { @MainActor in await runPermissionTests(); exit(0) }; dispatchMain() }
-else if CommandLine.arguments.contains("--selection-test") { Task { @MainActor in await runSelectionTests(); exit(0) }; dispatchMain() }
+else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--editor-test") { MainActor.assumeIsolated { runEditorTests() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }

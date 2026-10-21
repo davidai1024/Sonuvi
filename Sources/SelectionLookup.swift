@@ -28,6 +28,10 @@ struct SelectionLookupState {
         pendingPID = pid
         return generation
     }
+    mutating func keyboard(pid: pid_t) -> UUID {
+        invalidate(); pendingPID = pid
+        return generation
+    }
     mutating func activated(pid: pid_t?) {
         // Clicking into an inactive app can deliver activation after mouse-up.
         // Preserve that app's selection, but discard a read from another app.
@@ -97,7 +101,7 @@ enum LocalTextSelection {
         return nil
     }
     static func selectedText(in editor: NSTextView) -> String? {
-        guard editor.isSelectable, !editor.isFieldEditor else { return nil }
+        guard editor.isSelectable, !editor.isFieldEditor, !editor.hasMarkedText() else { return nil }
         let range = editor.selectedRange()
         return SelectionText.substring(editor.string, location: range.location, length: range.length)
     }
@@ -137,5 +141,29 @@ enum SelectionAccessibilityProfile: Equatable {
     var retryDelays: [UInt64] {
         // Chromium debounces its accessibility activation for two seconds.
         self == .chromium ? [120_000_000, 180_000_000, 300_000_000, 700_000_000, 1_000_000_000, 400_000_000] : [120_000_000, 180_000_000, 300_000_000]
+    }
+}
+
+// Inspect key codes and modifiers only. Never retain or log typed characters.
+enum KeyboardSelectionAction: Equatable {
+    case ignore, dismiss, inspect, select
+    static func resolve(keyCode: UInt16, flags: NSEvent.ModifierFlags, shortcuts: [ShortcutSpec] = []) -> Self {
+        let flags = flags.intersection([.command, .control, .option, .shift, .function])
+        if [54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode) { return .ignore }
+        var carbon: UInt32 = 0
+        if flags.contains(.command) { carbon |= 256 }
+        if flags.contains(.shift) { carbon |= 512 }
+        if flags.contains(.option) { carbon |= 2048 }
+        if flags.contains(.control) { carbon |= 4096 }
+        if shortcuts.contains(where: { $0.keyCode == UInt32(keyCode) && $0.modifiers == carbon }) { return .dismiss }
+        if keyCode == 0 && flags.contains(.command) { return .select } // Command-A
+        if [115, 116, 119, 121, 123, 124, 125, 126].contains(keyCode) && flags.contains(.shift) { return .select }
+        // Copy, paste, close, address bar and other commands must not reopen
+        // an old bubble merely because the previous selection still exists.
+        if flags.contains(.command) && [1, 3, 6, 7, 8, 9, 12, 13, 15, 17, 31, 35, 37, 43, 48].contains(keyCode) { return .dismiss }
+        if [36, 48, 49, 51, 53, 76, 117].contains(keyCode) { return .dismiss }
+        let functionKeys: Set<UInt16> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
+        if !flags.intersection([.command, .control, .option, .function]).isEmpty || functionKeys.contains(keyCode) { return .inspect }
+        return .dismiss // Ordinary typing and IME composition are not selection gestures.
     }
 }

@@ -6,6 +6,7 @@ import Charts
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var runtime: RuntimeManager
+    @ObservedObject var browser: BrowserIntegration
     @State private var key = ""
     @State private var replacingKey = false
     @State var message = ""
@@ -17,7 +18,7 @@ struct SettingsView: View {
     var tab: String { model.settingsTab }
     @State private var runningApps: [NSRunningApplication] = []
     @State private var configuredAppIDs: [String] = []
-    init(model: AppModel) { self.model = model; self.runtime = model.runtime; self.usage = model.usage }
+    init(model: AppModel) { self.model = model; self.runtime = model.runtime; self.browser = model.browser; self.usage = model.usage }
     let tabs = [("通用", "slider.horizontal.3"), ("权限", "lock.shield"), ("翻译", "character.bubble"), ("朗读", "waveform"), ("模型", "cpu"), ("统计", "chart.bar.xaxis"), ("快捷键", "command")]
     var body: some View {
         GeometryReader { geometry in
@@ -205,6 +206,20 @@ struct SettingsView: View {
                 toggleRow("划词按钮", detail: "选中文字后显示翻译和朗读入口。", symbol: "cursorarrow.rays", value: $model.mouseLookup)
                 rowDivider
                 toggleRow("复制取词", detail: "无法直接读取选区时尝试复制。", symbol: "doc.on.clipboard", value: $model.clipboardFallback)
+            }
+            rows("浏览器右键菜单", detail: "在 Chrome / Edge 主右键菜单中使用翻译和朗读。") {
+                SettingsRow(title: "Sonuvi 浏览器扩展", detail: browser.enabled ? "本机连接已启用。加载扩展后即可使用。" : "先启用本机连接，再下载并加载浏览器扩展。", symbol: "globe") {
+                    HStack(spacing: 8) {
+                        Button(L10n.text("下载扩展")) { NSWorkspace.shared.open(BrowserIntegration.extensionURL) }
+                        Button(L10n.text(browser.enabled ? "关闭连接" : "启用连接")) {
+                            do {
+                                if browser.enabled { try browser.disable(); message = "浏览器连接已关闭。" }
+                                else { try browser.enable(); message = "连接已启用。请加载浏览器扩展后使用。" }
+                            }
+                            catch { message = error.localizedDescription }
+                        }
+                    }.disabled(model.previewMode)
+                }
             }
             rows("使用引导", detail: "重新查看功能介绍、权限、快捷键与音色设置，现有配置会保留。") {
                 SettingsRow(title: "重新运行引导", detail: "可随时退出并返回设置。", symbol: "sparkles") {

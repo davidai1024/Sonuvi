@@ -532,5 +532,20 @@
   "API Key 更多操作": "API Key Options",
   "尚未下载": "Not Downloaded",
   "更改后立即生效并保存。": "Changes apply and save automatically.",
-  "回车或移开焦点保存，Esc 取消。": "Return or click elsewhere to save. Esc cancels."
+  "回车或移开焦点保存，Esc 取消。": "Return or click elsewhere to save. Esc cancels.",
+  "浏览器右键菜单": "Browser Context Menu",
+  "在 Chrome / Edge 主右键菜单中使用翻译和朗读。": "Translate and read from the main context menu in Chrome / Edge.",
+  "Sonuvi 浏览器扩展": "Sonuvi Browser Extension",
+  "本机连接已启用。加载扩展后即可使用。": "Local connection enabled. Load the extension to start.",
+  "先启用本机连接，再下载并加载浏览器扩展。": "Enable the connection, then download and load the extension.",
+  "下载扩展": "Get Extension",
+  "已启用": "Enabled",
+  "启用连接": "Enable",
+  "连接已启用。请加载浏览器扩展后使用。": "Connection enabled. Load the browser extension to start.",
+  "请先将 Sonuvi 拖入「应用程序」，再启用浏览器连接。": "Move Sonuvi to Applications before enabling the browser connection.",
+  "请先打开 Sonuvi，再重试。": "Open Sonuvi and try again.",
+  "Sonuvi 正在启动，请稍后重试。": "Sonuvi is starting. Try again shortly.",
+  "关闭连接": "Disable",
+  "浏览器连接已关闭。": "Browser connection disabled.",
+  "请先在 Sonuvi 设置中启用浏览器连接。": "Enable the browser connection in Sonuvi settings first."
 }

@@ -75,6 +75,7 @@ final class AppModel: ObservableObject {
     @Published var readShortcut = ShortcutSpec.load("readShortcut", fallback: .read)
     @Published var ocrShortcut = ShortcutSpec.load("ocrShortcut", fallback: .ocr)
     let runtime = RuntimeManager()
+    let browser = BrowserIntegration()
     var previewMode = false
     var onPreferences: (() -> String?)?
     var onShortcutRecording: ((Bool) -> Void)?

@@ -1,0 +1,32 @@
+{
+  "description": {
+    "message": "在浏览器右键菜单中，用 Sonuvi 翻译或朗读所选文字。"
+  },
+  "translate": {
+    "message": "翻译所选文字"
+  },
+  "read": {
+    "message": "朗读所选文字"
+  },
+  "missing": {
+    "message": "请先在 Sonuvi 设置 → 通用中，启用浏览器连接。"
+  },
+  "limit": {
+    "message": "请选择 1–6000 个字符。"
+  },
+  "connecting": {
+    "message": "正在检测连接…"
+  },
+  "connected": {
+    "message": "已连接 Sonuvi"
+  },
+  "retry": {
+    "message": "重新检测"
+  },
+  "setup": {
+    "message": "先在 Sonuvi 设置 → 通用中启用浏览器连接，再回到网页选中文字，右键选择 Sonuvi。"
+  },
+  "privacy": {
+    "message": "仅在你点击右键功能时发送所选文字给本机 Sonuvi；扩展不会读取其他网页内容，也不接触 API Key。"
+  }
+}

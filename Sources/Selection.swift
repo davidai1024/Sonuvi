@@ -147,6 +147,34 @@ enum SelectionReader {
               let primary = NSScreen.screens.first else { return nil }
         return NSPoint(x: rect.minX, y: primary.frame.maxY - rect.maxY)
     }
+    static func selectionAnchor(pid: pid_t) async -> NSPoint? {
+        guard trusted, !Task.isCancelled else { return nil }
+        let primaryHeight = NSScreen.screens.first?.frame.maxY ?? 0
+        return await withCheckedContinuation { continuation in
+            lookupQueue.async {
+                let app = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(app, 0.08)
+                var focused: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+                      let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { continuation.resume(returning: nil); return }
+                let element = focused as! AXUIElement
+                AXUIElementSetMessagingTimeout(element, 0.08)
+                var subrole: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+                guard subrole as? String != kAXSecureTextFieldSubrole else { continuation.resume(returning: nil); return }
+                var range: CFTypeRef?; var bounds: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
+                      let range, CFGetTypeID(range) == AXValueGetTypeID() else { continuation.resume(returning: nil); return }
+                var selection = CFRange()
+                guard AXValueGetValue(range as! AXValue, .cfRange, &selection), selection.length > 0,
+                      AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString, range, &bounds) == .success,
+                      let bounds, CFGetTypeID(bounds) == AXValueGetTypeID() else { continuation.resume(returning: nil); return }
+                var rect = CGRect.zero
+                guard AXValueGetValue(bounds as! AXValue, .cgRect, &rect), !rect.isEmpty else { continuation.resume(returning: nil); return }
+                continuation.resume(returning: NSPoint(x: rect.minX, y: primaryHeight - rect.maxY))
+            }
+        }
+    }
     // Clipboard fallback runs only after an explicit shortcut. Restore all data
     // types if no newer clipboard write occurred; never replace a newer user copy.
     static func capture(allowClipboard: Bool = true) async -> String? {

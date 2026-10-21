@@ -1,0 +1,32 @@
+{
+  "description": {
+    "message": "Translate or read selected text with Sonuvi from your browser context menu."
+  },
+  "translate": {
+    "message": "Translate Selected Text"
+  },
+  "read": {
+    "message": "Read Selected Text"
+  },
+  "missing": {
+    "message": "Enable the browser connection in Sonuvi → Settings → General first."
+  },
+  "limit": {
+    "message": "Select 1–6000 characters."
+  },
+  "connecting": {
+    "message": "Checking connection…"
+  },
+  "connected": {
+    "message": "Connected to Sonuvi"
+  },
+  "retry": {
+    "message": "Check Again"
+  },
+  "setup": {
+    "message": "Enable the browser connection in Sonuvi → Settings → General. Then select text on a webpage and right-click → Sonuvi."
+  },
+  "privacy": {
+    "message": "Only text you choose using the context menu is sent to Sonuvi on this Mac. The extension does not read other page content or access your API key."
+  }
+}

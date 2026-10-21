@@ -37,6 +37,25 @@ func runSelectionTests() async {
     state.begin(at: start); state.invalidate()
     check(state.finish(at: end, clicks: 1, shift: false, pid: 10) == nil, "Scroll/cancel/local click resets the gesture")
 
+    let keyboardRequest = state.keyboard(pid: 10)
+    check(state.accepts(keyboardRequest, frontPID: 10), "Keyboard selection does not require a mouse-down gesture")
+    let nextKeyboardRequest = state.keyboard(pid: 20)
+    check(!state.accepts(nextKeyboardRequest, frontPID: 10), "Keyboard request cannot read from a different foreground app")
+    check(!state.accepts(keyboardRequest, frontPID: 10), "A newer keyboard request cancels the older selection")
+    check(KeyboardSelectionAction.resolve(keyCode: 0, flags: .command) == .select, "Command-A triggers a focused selection lookup")
+    check(KeyboardSelectionAction.resolve(keyCode: 124, flags: [.shift, .option]) == .select, "Option-Shift arrow selection triggers lookup")
+    check(KeyboardSelectionAction.resolve(keyCode: 125, flags: [.shift, .command]) == .select, "Command-Shift arrow selection triggers lookup")
+    check(KeyboardSelectionAction.resolve(keyCode: 96, flags: []) == .inspect, "Third-party function-key selection can be inspected")
+    check(KeyboardSelectionAction.resolve(keyCode: 40, flags: [.control, .option]) == .inspect, "Custom modified selection hotkeys can be inspected")
+    check(KeyboardSelectionAction.resolve(keyCode: 8, flags: .command) == .dismiss, "Copy does not resurrect the old selection popup")
+    check(KeyboardSelectionAction.resolve(keyCode: 9, flags: .command) == .dismiss, "Paste does not display stale selection")
+    check(KeyboardSelectionAction.resolve(keyCode: 53, flags: []) == .dismiss, "Escape dismisses keyboard selection")
+    check(KeyboardSelectionAction.resolve(keyCode: 40, flags: []) == .dismiss, "Ordinary typing never probes the selected control")
+    check(KeyboardSelectionAction.resolve(keyCode: 40, flags: .shift) == .dismiss, "Typing uppercase letters does not trigger IME selection popups")
+    check(KeyboardSelectionAction.resolve(keyCode: 49, flags: .control) == .dismiss, "Switching input methods does not inspect a composing selection")
+    check(KeyboardSelectionAction.resolve(keyCode: 56, flags: .shift) == .ignore, "Modifier key releases alone never trigger selection")
+    check(KeyboardSelectionAction.resolve(keyCode: 17, flags: [.option, .shift], shortcuts: [.translate]) == .dismiss, "Sonuvi's own translate shortcut cannot reopen the popup")
+
     check(SelectionText.substring("A😀English中文", location: 3, length: 7) == "English", "AX ranges use UTF-16 offsets")
     check(SelectionText.substring("abc", location: -1, length: 1) == nil, "Negative AX offset is rejected")
     check(SelectionText.substring("abc", location: 1, length: Int.max) == nil, "Overflowing AX range is rejected")
@@ -132,5 +151,41 @@ func runSelectionTests() async {
         }
     }, isValid: { true }, wait: noWait)
     check(responsive == "Responsive" && heartbeat, "Selection lookup leaves the UI executor available")
+    let fixtureName = "Sonuvi.KeyboardSelectionFixture." + UUID().uuidString
+    let defaults = UserDefaults(suiteName: fixtureName)!
+    defer { defaults.removePersistentDomain(forName: fixtureName) }
+    defaults.set(OnboardingState.version, forKey: "onboarding.completedVersion")
+    let delegate = AppDelegate(); delegate.model.previewMode = true
+    delegate.model.translateShortcut = .translate; delegate.model.readShortcut = .read; delegate.model.ocrShortcut = .ocr
+    delegate.model.mouseLookup = true; delegate.onboarding = OnboardingState(defaults: defaults)
+    let fixture = FloatingPanel(contentRect: NSRect(x: 40, y: 40, width: 440, height: 180), styleMask: [.titled], backing: .buffered, defer: false)
+    fixture.isReleasedWhenClosed = false
+    let editor = NSTextView(frame: NSRect(x: 12, y: 12, width: 416, height: 156))
+    editor.string = "A synthetic keyboard selection."; editor.isSelectable = true
+    fixture.contentView = editor; delegate.window = fixture
+    NSApp.setActivationPolicy(.accessory)
+    fixture.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    fixture.makeKey(); fixture.makeFirstResponder(editor)
+    @MainActor func keyboard(_ code: UInt16, _ flags: NSEvent.ModifierFlags) async {
+        let down = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: fixture.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
+        let up = NSEvent.keyEvent(with: .keyUp, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: fixture.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
+        delegate.onSelectionKeyDown(down, local: true)
+        delegate.onSelectionKeyUp(up, local: true)
+        try? await Task.sleep(nanoseconds: 180_000_000)
+    }
+    editor.selectAll(nil)
+    check(fixture.isKeyWindow && fixture.firstResponder === editor, "Keyboard fixture has the same focused-editor state as an active Sonuvi window")
+    await keyboard(0, .command)
+    check(delegate.bubble?.isVisible == true && delegate.lastSelection?.text == editor.string, "Command-A in a real text view displays the popup without any mouse gesture")
+    await keyboard(8, .command)
+    check(delegate.bubble?.isVisible != true, "Copy dismisses the popup and does not reopen it")
+    await keyboard(96, [])
+    check(delegate.bubble?.isVisible != true, "Unchanged selection after another key does not resurrect the popup")
+    editor.setSelectedRange(NSRange(location: 2, length: 9))
+    await keyboard(124, [.option, .shift])
+    check(delegate.bubble?.isVisible == true && delegate.lastSelection?.text == "synthetic", "Shift-arrow selection reads the focused editor rather than the cursor position")
+    delegate.dismissSelectionBubble(); delegate.bubble?.close(); fixture.close()
     print("PASS: \(count) selection regression checks")
 }
+
