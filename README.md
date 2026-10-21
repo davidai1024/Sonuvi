@@ -19,7 +19,7 @@
 
 **[点击直接下载 DMG](https://github.com/davidai1024/Sonuvi/releases/latest/download/Sonuvi-Mac-Offline.dmg)** · [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/latest)
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.21
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.21 · 约 458 MB
 
 内置本地模型、28 个英文音色与运行环境，无需另装 Python 或 Speak11。
 <!-- sonuvi-download:end -->
