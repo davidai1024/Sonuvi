@@ -136,7 +136,7 @@ def main():
     if not link.is_symlink():link.symlink_to('/Applications',target_is_directory=True)
     docs=stage/'.Documentation';docs.mkdir(exist_ok=True)
     for name in ('LICENSE','THIRD_PARTY_NOTICES.txt'):shutil.copy2(app/'Contents/Resources'/name,docs/name)
-    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。存在同名应用时，由 Finder 显示替换、保留或取消选项；选择替换后，从应用程序打开。首次使用会进入引导。\n如果提示无法验证或移到废纸篓，可在本安装窗口双击“首次打开修复”。工具先核对已安装的官方应用版本及完整性，再清除该应用的下载隔离标记并请求启动；必要时由系统请求管理员授权。辅助功能和屏幕录制仍需在系统设置中授权。工具本身也可能被系统拦截，此时请使用“系统设置 → 隐私与安全性 → 仍要打开”。真正的损坏或完整性不符不会被处理。\n内置模型及28个英文音色。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
+    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。存在同名应用时，由 Finder 显示替换、保留或取消选项；选择替换后，从应用程序打开。首次使用会进入引导。\n如果提示无法验证或移到废纸篓，可尝试本安装窗口的“首次打开修复”。工具先核对已安装的官方应用版本及完整性，再清除该应用的下载隔离标记并请求启动；必要时由系统请求管理员授权。辅助功能和屏幕录制仍需在系统设置中授权。工具本身也可能被系统拦截，此时请使用“系统设置 → 隐私与安全性 → 仍要打开”。也可打开终端，输入 /bin/zsh 和一个空格，将工具图标拖进终端后按回车；仍可能出现系统确认。真正的损坏或完整性不符不会被处理。\n内置模型及28个英文音色。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
     store(stage/'.DS_Store')
     raw=work/'Sonuvi-uncompressed.dmg'
     subprocess.run(['/usr/bin/hdiutil','makehybrid','-hfs','-hfs-volume-name',volume_name,'-hfs-openfolder',str(stage),'-ov','-o',str(raw),str(stage)],check=True)

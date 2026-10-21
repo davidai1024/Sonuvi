@@ -18,9 +18,9 @@ let arrow = NSBezierPath(); arrow.move(to: NSPoint(x: 290, y: 335)); arrow.line(
 arrow.move(to: NSPoint(x: 356, y: 346)); arrow.line(to: NSPoint(x: 368, y: 335)); arrow.line(to: NSPoint(x: 356, y: 324))
 arrow.lineWidth = 2; arrow.lineCapStyle = .round; arrow.lineJoinStyle = .round
 NSColor.black.withAlphaComponent(0.28).setStroke(); arrow.stroke()
-text("先完成拖拽安装；若提示无法打开，再双击下方工具", y: 235, size: 12, weight: .regular, alpha: 0.58)
+text("先完成拖拽安装；首次打开受阻时可尝试下方工具", y: 235, size: 12, weight: .regular, alpha: 0.58)
 text("更新时请先退出旧版，再拖入替换", y: 213, size: 10, weight: .regular, alpha: 0.38)
-text("仅处理 Sonuvi 的首次打开；授权仍由系统提示完成", y: 52, size: 10, weight: .regular, alpha: 0.40)
+text("工具也可能被拦截：到「隐私与安全性」选择「仍要打开」", y: 52, size: 10, weight: .regular, alpha: 0.40)
 text("Apple Silicon  ·  macOS 14.0+  ·  本地模型与 28 个英文音色", y: 25, size: 10, weight: .regular, alpha: 0.30)
 NSGraphicsContext.restoreGraphicsState()
 let output = URL(fileURLWithPath: CommandLine.arguments[1])

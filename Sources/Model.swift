@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
     @Published var permissionMessage = ""
     @Published var permissionRepairing = false
     @Published var keyAccessRequired = false
+    @Published var keyAccessIssue = ""
     @Published var screenPermission = false
     @Published var settingsTab = "通用"
     let usage = UsageStore()
@@ -96,19 +97,44 @@ final class AppModel: ObservableObject {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         try store(value)
-        hasKey = true; keyAccessRequired = false
+        hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
     }
-    func authorizeAPIKeyAccess() throws {
+    func authorizeAPIKeyAccess(read: (Bool) throws -> String = { try KeyStore.read(allowInteraction: $0) }) throws {
         guard !previewMode else { return }
-        _ = try KeyStore.read(allowInteraction: true)
-        hasKey = true; keyAccessRequired = false
+        do {
+            guard !(try read(true)).isEmpty else { throw KeyAccessError.missing }
+            hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
+        } catch {
+            applyKeyAccessError(error)
+            throw error
+        }
     }
     func deleteAPIKey() throws {
         guard !previewMode else { return }
-        try KeyStore.delete(); hasKey = false; keyAccessRequired = false
+        try KeyStore.delete(); hasKey = false; keyAccessRequired = false; keyAccessIssue = ""
     }
 
-    func refreshStatus() { permissionGranted = SelectionReader.trusted; screenPermission = CGPreflightScreenCaptureAccess(); if !previewMode { hasKey = KeyStore.containsKey }; runtime.refresh() }
+    /// Probe actual readability, not just item existence. Never request a
+    /// password on launch; the user must choose Allow Access first.
+    func refreshAPIKeyAccess(read: (Bool) throws -> String = { try KeyStore.read(allowInteraction: $0) }) {
+        guard !previewMode else { return }
+        do {
+            guard !(try read(false)).isEmpty else { throw KeyAccessError.missing }
+            hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
+        } catch { applyKeyAccessError(error) }
+    }
+    private func applyKeyAccessError(_ error: Error) {
+        keyAccessIssue = ""
+        switch error {
+        case KeyAccessError.authorizationRequired:
+            hasKey = true; keyAccessRequired = true
+        case KeyAccessError.missing:
+            hasKey = false; keyAccessRequired = false
+        default:
+            keyAccessRequired = false; keyAccessIssue = error.localizedDescription
+        }
+    }
+    func refreshStatus() { permissionGranted = SelectionReader.trusted; screenPermission = CGPreflightScreenCaptureAccess(); refreshAPIKeyAccess(); runtime.refresh() }
     func applyAppearance() {
         switch appearance { case .system: NSApp.appearance = nil; case .light: NSApp.appearance = NSAppearance(named: .aqua); case .dark: NSApp.appearance = NSAppearance(named: .darkAqua) }
     }
@@ -173,9 +199,9 @@ final class AppModel: ObservableObject {
         guard !text.isEmpty else { error = "请先划选或输入文字。"; return }
         guard text.count <= 6000 else { error = "单次最多 6000 个字符，请缩短后再翻译。"; return }
         let key: String
-        do { key = try KeyStore.read(); keyAccessRequired = false }
+        do { key = try KeyStore.read(); hasKey = true; keyAccessRequired = false; keyAccessIssue = "" }
         catch {
-            if case KeyAccessError.authorizationRequired = error { keyAccessRequired = true }
+            applyKeyAccessError(error)
             showIssue(error.localizedDescription, settingsTab: "模型"); return
         }
         let kind = effectiveKind

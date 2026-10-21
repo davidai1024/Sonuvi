@@ -510,9 +510,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func showDefaultWindow() {
         guard startupPresentation.canPresent && !restartInProgress else { return }
-        switch StartupDestination.resolve(onboardingComplete: onboarding.completed && !onboarding.replaying, accessibility: model.permissionGranted, screen: model.screenPermission) {
+        switch StartupDestination.resolve(onboardingComplete: onboarding.completed && !onboarding.replaying, accessibility: model.permissionGranted, screen: model.screenPermission, keyAccessNeedsAttention: model.keyAccessRequired || !model.keyAccessIssue.isEmpty) {
         case .onboarding: showOnboarding()
         case .permissions: model.settingsTab = "权限"; showSettings()
+        case .models: model.settingsTab = "模型"; showSettings()
         case .settings: showSettings()
         }
     }

@@ -188,10 +188,11 @@ struct InstallationPermissionState {
 }
 
 enum StartupDestination: Equatable {
-    case onboarding, permissions, settings
-    static func resolve(onboardingComplete: Bool, accessibility: Bool, screen: Bool) -> Self {
+    case onboarding, permissions, models, settings
+    static func resolve(onboardingComplete: Bool, accessibility: Bool, screen: Bool, keyAccessNeedsAttention: Bool = false) -> Self {
         if !onboardingComplete { return .onboarding }
-        return accessibility && screen ? .settings : .permissions
+        if !accessibility || !screen { return .permissions }
+        return keyAccessNeedsAttention ? .models : .settings
     }
 }
 

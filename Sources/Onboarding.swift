@@ -342,6 +342,14 @@ struct OnboardingView: View {
             card {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) { icon("key.fill", color: .blue); LText("DeepSeek API").font(.system(size: 16, weight: .semibold)); Spacer() }
+                    if model.keyAccessRequired {
+                        LText("API Key 已保存，需要重新允许钥匙串访问。")
+                            .font(.system(size: 12)).foregroundStyle(.orange)
+                        Button(L10n.text("允许访问 API Key")) {
+                            do { try model.authorizeAPIKeyAccess(); state.error = "" }
+                            catch { state.error = error.localizedDescription }
+                        }.disabled(model.previewMode)
+                    }
                     LText(model.hasKey ? "已配置 API Key。可保留现有配置，或输入新 Key 替换。" : "填入自己的 API Key，开启中英互译。")
                         .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2).frame(height: 32, alignment: .topLeading)
                     APIKeyField(placeholder: L10n.text(model.hasKey ? "输入新的 API Key 以替换" : "sk-…"), text: $apiKey, bordered: false).frame(height: 22).font(.system(size: 13)).padding(12)

@@ -33,8 +33,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.20</string>
-<key>CFBundleVersion</key><string>33</string>
+<key>CFBundleShortVersionString</key><string>0.4.21</string>
+<key>CFBundleVersion</key><string>34</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>

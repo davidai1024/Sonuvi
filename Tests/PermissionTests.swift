@@ -86,6 +86,32 @@ func runPermissionTests() async {
     check(StartupDestination.resolve(onboardingComplete: true, accessibility: false, screen: true) == .permissions, "Missing Accessibility opens Permissions")
     check(StartupDestination.resolve(onboardingComplete: true, accessibility: true, screen: false) == .permissions, "Missing Screen Recording opens Permissions")
     check(StartupDestination.resolve(onboardingComplete: true, accessibility: true, screen: true) == .settings, "Ordinary startup opens Settings, not an empty translation")
+    check(StartupDestination.resolve(onboardingComplete: true, accessibility: true, screen: true, keyAccessNeedsAttention: true) == .models, "Reinstalled app presents API authorization before first translation")
+    check(StartupDestination.resolve(onboardingComplete: true, accessibility: false, screen: true, keyAccessNeedsAttention: true) == .permissions, "System permissions retain priority while API notice is shown across settings")
+    check(StartupDestination.resolve(onboardingComplete: false, accessibility: true, screen: true, keyAccessNeedsAttention: true) == .onboarding, "Keychain notice does not skip first-run onboarding")
+    let credentials = AppModel()
+    var interactions: [Bool] = []
+    credentials.refreshAPIKeyAccess { interactive in
+        interactions.append(interactive); throw KeyAccessError.authorizationRequired
+    }
+    check(credentials.hasKey && credentials.keyAccessRequired && interactions == [false], "Startup detects retained but inaccessible key without requesting password")
+    do {
+        try credentials.authorizeAPIKeyAccess { interactive in
+            interactions.append(interactive); throw KeyAccessError.authorizationRequired
+        }
+        check(false, "Cancelled access must not succeed")
+    } catch { check(credentials.keyAccessRequired && credentials.hasKey, "Denied authorization preserves saved key and recovery notice") }
+    do {
+        try credentials.authorizeAPIKeyAccess { interactive in interactions.append(interactive); return "synthetic-test-value" }
+        check(credentials.hasKey && !credentials.keyAccessRequired && interactions == [false, true, true], "Only explicit Allow Access requests interaction and clears notice on success")
+    } catch { check(false, "Explicit credential authorization succeeds") }
+    credentials.refreshAPIKeyAccess { _ in throw KeyAccessError.unavailable(-25291) }
+    check(credentials.hasKey && !credentials.keyAccessIssue.isEmpty, "Temporary keychain failure is visible and never erases configured status")
+    credentials.refreshAPIKeyAccess { _ in throw KeyAccessError.missing }
+    check(!credentials.hasKey && !credentials.keyAccessRequired && credentials.keyAccessIssue.isEmpty, "Fresh installs without API key do not get a reauthorization warning")
+    credentials.previewMode = true
+    credentials.refreshAPIKeyAccess { _ in check(false, "Preview must not inspect the real keychain"); return "" }
+    check(!credentials.hasKey, "Appearance preview leaves credentials untouched")
     var commands: [[String]] = []
     do {
         let report = try await AccessibilityRepair.resetBoth(bundleID: "com.wusir.musetranslate", execute: { commands.append($0) })

@@ -30,6 +30,7 @@ struct SettingsView: View {
                         .padding(.horizontal, MuseLayout.contentInset).padding(.top, 26).padding(.bottom, 18)
                     ScrollView {
                         VStack(alignment: .leading, spacing: MuseLayout.sectionGap) {
+                            if model.keyAccessRequired || !model.keyAccessIssue.isEmpty { keyAccessNotice }
                             if tab == "通用" { general }
                             else if tab == "权限" { permissions }
                             else if tab == "翻译" { translation }
@@ -52,6 +53,24 @@ struct SettingsView: View {
         }.font(MuseLayout.body).frame(minWidth: 740, minHeight: 560)
             .background(Color(nsColor: .windowBackgroundColor).opacity(0.94))
             .onAppear { model.refreshStatus(); refreshApps() }
+    }
+    private var keyAccessNotice: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(L10n.text(model.keyAccessRequired ? "翻译需要重新授权" : "暂时无法读取 API Key"), systemImage: "key.fill")
+                .font(.system(size: 14, weight: .semibold))
+            LText(model.keyAccessRequired ? "API Key 仍保存在钥匙串中。更新或重装后，macOS 可能要求重新允许访问；无需重新填写 Key。本地英文朗读不受影响。" : "暂时无法读取钥匙串中的 API Key。请解锁登录钥匙串后重新检查；无需删除或重新填写 Key。")
+                .font(MuseLayout.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !model.keyAccessIssue.isEmpty {
+                LText(model.keyAccessIssue).font(MuseLayout.detail).foregroundStyle(.secondary)
+            }
+            Button(L10n.text(model.keyAccessRequired ? "允许访问 API Key" : "重新检查")) {
+                if model.keyAccessRequired {
+                    do { try model.authorizeAPIKeyAccess(); message = "钥匙串访问已授权，可以返回翻译。" }
+                    catch { message = error.localizedDescription }
+                } else { model.refreshAPIKeyAccess() }
+            }.disabled(model.previewMode)
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
     }
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -239,22 +258,13 @@ struct SettingsView: View {
     var models: some View {
         Group {
             rows("DeepSeek", detail: "中英互译使用你的 API Key。") {
-                SettingsRow(title: "API Key", detail: model.hasKey ? "已安全保存在钥匙串。" : "尚未配置。", symbol: "key", stacked: true) {
+                SettingsRow(title: "API Key", detail: model.keyAccessRequired ? "已保存，等待允许访问。" : model.hasKey ? "已安全保存在钥匙串。" : "尚未配置。", symbol: "key", stacked: true) {
                     HStack {
                         APIKeyField(placeholder: L10n.text(model.previewMode ? "外观预览，不填写 Key" : (model.hasKey ? "填写新的 Key 以替换" : "输入 API Key")), text: $key).frame(height: 28).disabled(model.previewMode)
                         Button(L10n.text("删除")) { do { try model.deleteAPIKey(); message = "Key 已删除" } catch { message = error.localizedDescription } }.disabled(!model.hasKey || model.previewMode)
                     }
                 }
                 rowDivider
-                if model.keyAccessRequired {
-                    SettingsRow(title: "钥匙串访问", detail: "由你主动授权一次；翻译时不会反复弹出密码框。", symbol: "lock.shield") {
-                        Button(L10n.text("授权访问")) {
-                            do { try model.authorizeAPIKeyAccess(); message = "钥匙串访问已授权，可以返回翻译。" }
-                            catch { message = error.localizedDescription }
-                        }.disabled(model.previewMode)
-                    }
-                    rowDivider
-                }
                 SettingsRow(title: "模型", detail: "关闭思考，流式返回。", symbol: "cpu") { TextField(L10n.text("模型名称"), text: $model.modelName).textFieldStyle(.roundedBorder).frame(width: 180) }
             }
             rows("本地朗读", detail: "内置自然英文语音，准备完成后无需联网。") {

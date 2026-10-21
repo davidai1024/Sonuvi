@@ -483,5 +483,13 @@
   "让英文，自然读给你听": "English, read naturally.",
   "Sonuvi 已在菜单栏就位": "Sonuvi is ready in your menu bar",
   "选中英文，即可用自然的声音朗读。模型在本机运行，离线也能听。": "Select English text to hear it in a natural voice. Runs locally, even offline.",
-  "点击上方图标，打开菜单与设置": "Click the icon above for the menu and settings"
+  "点击上方图标，打开菜单与设置": "Click the icon above for the menu and settings",
+  "翻译需要重新授权": "Translation needs authorization",
+  "暂时无法读取 API Key": "API Key is temporarily unavailable",
+  "API Key 仍保存在钥匙串中。更新或重装后，macOS 可能要求重新允许访问；无需重新填写 Key。本地英文朗读不受影响。": "Your API key is still in Keychain. After an update or reinstall, macOS may require access again. You do not need to enter the key again. Local English reading is unaffected.",
+  "暂时无法读取钥匙串中的 API Key。请解锁登录钥匙串后重新检查；无需删除或重新填写 Key。": "The API key in Keychain cannot be read right now. Unlock your login keychain and check again. You do not need to delete or re-enter the key.",
+  "允许访问 API Key": "Allow API Key Access",
+  "重新检查": "Check Again",
+  "已保存，等待允许访问。": "Saved; access needs your approval.",
+  "API Key 已保存，需要重新允许钥匙串访问。": "Your API key is saved. Allow Keychain access again."
 }
