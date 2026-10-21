@@ -530,7 +530,7 @@
   "可用磁盘空间不足，请至少预留 3GB。": "Not enough disk space. Allow at least 3 GB.",
   "替换成新的": "Replace with New Key",
   "API Key 更多操作": "API Key Options",
-  "输入后按回车或点击其他位置，即刻保存。": "Press Return or click elsewhere to save automatically.",
   "尚未下载": "Not Downloaded",
-  "更改后立即生效并保存。": "Changes apply and save automatically."
+  "更改后立即生效并保存。": "Changes apply and save automatically.",
+  "回车或移开焦点保存，Esc 取消。": "Return or click elsewhere to save. Esc cancels."
 }

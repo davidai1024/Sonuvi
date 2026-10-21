@@ -276,12 +276,11 @@ struct SettingsView: View {
                         }
                     }
                 } else {
-                    SettingsRow(title: "API Key", detail: "输入后按回车或点击其他位置，即刻保存。", symbol: "key", stacked: true) {
+                    SettingsRow(title: "API Key", detail: "回车或移开焦点保存，Esc 取消。", symbol: "key", stacked: true) {
                         HStack(spacing: 10) {
                             APIKeyField(placeholder: L10n.text(model.previewMode ? "外观预览，不填写 Key" : "输入 API Key"), text: $key,
                                 onCommit: commitKey, onCancel: cancelKey)
                                 .frame(height: 28).disabled(model.previewMode)
-                            if replacingKey { Button(L10n.text("取消"), action: cancelKey) }
                         }
                     }
                 }
