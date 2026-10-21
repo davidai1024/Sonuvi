@@ -19,11 +19,17 @@ arrow.move(to: NSPoint(x: 315, y: 229)); arrow.line(to: NSPoint(x: 325, y: 219))
 arrow.lineWidth = 1.5; arrow.lineCapStyle = .round; arrow.lineJoinStyle = .round
 NSColor.black.withAlphaComponent(0.30).setStroke(); arrow.stroke()
 NSColor(calibratedWhite: 0.945, alpha: 1).setFill()
-NSBezierPath(roundedRect: NSRect(x: 24, y: 52, width: 552, height: 78), xRadius: 12, yRadius: 12).fill()
+let helpRect = NSRect(x: 24, y: 52, width: 552, height: 78)
+NSBezierPath(roundedRect: helpRect, xRadius: 12, yRadius: 12).fill()
 NSColor.black.withAlphaComponent(0.08).setStroke()
 let divider = NSBezierPath(); divider.move(to: NSPoint(x: 420, y: 66)); divider.line(to: NSPoint(x: 420, y: 116)); divider.lineWidth = 0.7; divider.stroke()
-text("首次打开受阻？先点「完成」，不要移到废纸篓。", rect: NSRect(x: 40, y: 98, width: 420, height: 22), size: 11.5, alpha: 0.76, alignment: .left)
-text("再到「隐私与安全性」点「仍要打开」。", rect: NSRect(x: 40, y: 76, width: 420, height: 22), size: 11.5, alpha: 0.60, alignment: .left)
+let guidanceFont = NSFont.systemFont(ofSize: 11.5)
+let guidanceLineHeight = ceil(("首次打开受阻？" as NSString).size(withAttributes: [.font: guidanceFont]).height)
+let guidanceGap: CGFloat = 8
+let guidanceHeight = guidanceLineHeight * 2 + guidanceGap
+let guidanceBottom = helpRect.midY - guidanceHeight / 2
+text("首次打开受阻？先点「完成」，不要移到废纸篓。", rect: NSRect(x: 40, y: guidanceBottom + guidanceLineHeight + guidanceGap, width: 364, height: guidanceLineHeight), size: 11.5, alpha: 0.76, alignment: .left)
+text("再到「隐私与安全性」点「仍要打开」。", rect: NSRect(x: 40, y: guidanceBottom, width: 364, height: guidanceLineHeight), size: 11.5, alpha: 0.60, alignment: .left)
 text("Apple Silicon · macOS 14.0+", rect: NSRect(x: 24, y: 12, width: 552, height: 22), size: 10, alpha: 0.38)
 NSGraphicsContext.restoreGraphicsState()
 let output = URL(fileURLWithPath: CommandLine.arguments[1])
