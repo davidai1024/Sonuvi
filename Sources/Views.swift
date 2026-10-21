@@ -329,41 +329,41 @@ struct SettingsView: View {
     }
     private var voiceModelActions: some View {
         HStack(spacing: 10) {
-        if runtime.installing { Button(L10n.text("取消")) { runtime.cancel() } }
-        else if runtime.ready && model.selectedVoiceAvailable {
-            Button(L10n.text(model.speaking ? "停止试听" : "试听声音")) {
-                model.speak("Welcome to Sonuvi. A natural voice, ready whenever you need it.", presentation: .settings)
+            if runtime.installing { Button(L10n.text("取消")) { runtime.cancel() } }
+            else if runtime.ready && model.selectedVoiceAvailable {
+                Button(L10n.text(model.speaking ? "停止试听" : "试听声音")) {
+                    model.speak("Welcome to Sonuvi. A natural voice, ready whenever you need it.", presentation: .settings)
+                }
+                if model.speaking { SpeechDots(meter: model.playback.meter) }
+                if runtime.modelUpdateAvailable {
+                    Button(L10n.text("下载模型更新")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
+                }
+            } else {
+                Button(L10n.text(runtime.installationFailed ? "重试下载" : runtime.ready ? "修复朗读" : "下载本地模型")) {
+                    model.stopSpeaking(); runtime.preparePreferred()
+                }
             }
-            if model.speaking { SpeechDots(meter: model.playback.meter) }
-            if runtime.modelUpdateAvailable {
-                Button(L10n.text("下载模型更新")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
-            }
-        } else {
-            Button(L10n.text(runtime.installationFailed ? "重试下载" : runtime.ready ? "修复朗读" : "下载本地模型")) {
-                model.stopSpeaking(); runtime.preparePreferred()
-            }
+            Menu {
+                Button(L10n.text(runtime.checkingForUpdates ? "正在检查…" : "检查模型更新")) { runtime.checkForModelUpdates() }
+                    .disabled(runtime.checkingForUpdates)
+                if runtime.ready {
+                    Button(L10n.text("修复朗读")) { model.stopSpeaking(); runtime.preparePreferred() }
+                    Button(L10n.text("查看模型文件")) { runtime.reveal() }
+                    Divider()
+                    Button(L10n.text("移除本地朗读环境…")) { confirmRemove() }
+                }
+                if runtime.installationFailed {
+                    Button(L10n.text("重新下载语音资源")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
+                }
+                if runtime.bundledRuntime == nil && runtime.canImport {
+                    Button(L10n.text("导入旧版 Speak11 环境")) { model.stopSpeaking(); runtime.install(importExisting: true) }
+                }
+            } label: { Image(systemName: "ellipsis").frame(width: 24, height: 20) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+                .help(L10n.text("更多操作"))
+                .disabled(runtime.installing || runtime.removing)
         }
-        Menu {
-            Button(L10n.text(runtime.checkingForUpdates ? "正在检查…" : "检查模型更新")) { runtime.checkForModelUpdates() }
-                .disabled(runtime.checkingForUpdates)
-            if runtime.ready {
-                Button(L10n.text("修复朗读")) { model.stopSpeaking(); runtime.preparePreferred() }
-                Button(L10n.text("查看模型文件")) { runtime.reveal() }
-                Divider()
-                Button(L10n.text("移除本地朗读环境…")) { confirmRemove() }
-            }
-            if runtime.installationFailed {
-                Button(L10n.text("重新下载语音资源")) { model.stopSpeaking(); runtime.downloadVoicePackage() }
-            }
-            if runtime.bundledRuntime == nil && runtime.canImport {
-                Button(L10n.text("导入旧版 Speak11 环境")) { model.stopSpeaking(); runtime.install(importExisting: true) }
-            }
-        } label: { Image(systemName: "ellipsis").frame(width: 24, height: 20) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
-            .help(L10n.text("更多操作"))
-            .disabled(runtime.installing || runtime.removing)
-    }
-            .disabled(runtime.removing || model.previewMode)
+        .disabled(runtime.removing || model.previewMode)
     }
     var hotkeys: some View {
         Group {
