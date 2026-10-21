@@ -2,7 +2,11 @@
 import AppKit
 
 let file = CommandLine.arguments[1]
-let icon = NSWorkspace.shared.icon(forFile: "/System/Applications/System Settings.app")
+let source = NSWorkspace.shared.icon(forFile: "/System/Applications/System Settings.app")
+let icon = NSImage(size: NSSize(width: 128, height: 128))
+icon.lockFocus()
+source.draw(in: NSRect(x: 0, y: 0, width: 128, height: 128))
+icon.unlockFocus()
 guard NSWorkspace.shared.setIcon(icon, forFile: file, options: []) else {
     fputs("Cannot set privacy shortcut icon\n", stderr); exit(1)
 }
