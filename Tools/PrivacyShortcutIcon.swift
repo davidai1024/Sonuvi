@@ -2,10 +2,12 @@
 import AppKit
 
 let file = CommandLine.arguments[1]
-let source = NSWorkspace.shared.icon(forFile: "/System/Applications/System Settings.app")
 let icon = NSImage(size: NSSize(width: 128, height: 128))
 icon.lockFocus()
-source.draw(in: NSRect(x: 0, y: 0, width: 128, height: 128))
+let config = NSImage.SymbolConfiguration(pointSize: 42, weight: .regular)
+    .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor(calibratedWhite: 0.48, alpha: 1)]))
+NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: "打开隐私与安全性")?
+    .withSymbolConfiguration(config)?.draw(in: NSRect(x: 42, y: 18, width: 44, height: 44))
 icon.unlockFocus()
 guard NSWorkspace.shared.setIcon(icon, forFile: file, options: []) else {
     fputs("Cannot set privacy shortcut icon\n", stderr); exit(1)

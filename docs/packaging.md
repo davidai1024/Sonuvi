@@ -52,7 +52,7 @@ python3 -m venv .packaging-venv
   --workdir "$PWD/dmg-work"
 ```
 
-DMG 内包含应用、Applications 链接、拖拽安装背景与“打开隐私与安全性.inetloc”系统设置链接，不再包含修复脚本。链接内容为 `x-apple.systempreferences:com.apple.preference.security?General`，仅打开系统设置，不修改隔离标记或任何权限；用户需在首次打开受阻后手动点击“仍要打开”。在不同系统上可能需要手动滚动到“安全性”。替换已安装应用由 Finder 原生对话框处理。
+DMG 内包含应用、Applications 链接、拖拽安装背景与“双击打开设置.inetloc”系统设置链接，不再包含修复脚本。链接内容为 `x-apple.systempreferences:com.apple.preference.security?General`，仅打开系统设置，不修改隔离标记或任何权限；用户需在首次打开受阻后手动点击“仍要打开”。在不同系统上可能需要手动滚动到“安全性”。替换已安装应用由 Finder 原生对话框处理。
 
 若分发 GPL 应用二进制，请一并提供与构建对应的完整源码及所需许可证。第三方资源的许可边界见仓库根目录 `THIRD_PARTY_NOTICES.txt`。
 
@@ -65,3 +65,5 @@ DMG 内包含应用、Applications 链接、拖拽安装背景与“打开隐私
 官网同时提供 `Sonuvi-Mac.dmg`（轻量版）与 `Sonuvi-Mac-Offline.dmg`（完整朗读版）。两者须使用同一版本的应用代码；完整包加入 `BundledVoice` 并设置 `SonuviIncludesVoice=true` 后重新签名。`build.sh` 已通过 `SONUVI_BUNDLED_VOICE` 支持完整包构建。安装背景和使用说明根据该标记选择对应的模型准备文案。系统设置入口在两个版本中相同。
 
 为已发布的版本追加完整包时，保留原轻量包，上传完整包，并更新包含两个文件的 `SHA256SUMS.txt`；不要用单包发布流程替换该版本。确认完整包的首次离线准备与 28 个音色可用后，再发布官网双下载入口。轻量版的本地朗读模型按需下载免费，翻译 API 费用另计。
+
+安装窗口采用 600 × 422 的紧凑布局，底部只显示两行提示。设置链接的小齿轮与提示并排放置；详细说明保留在随包文档和官网。

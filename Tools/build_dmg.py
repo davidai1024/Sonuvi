@@ -32,16 +32,16 @@ def store(path, metadata=None):
     alias = Alias(volume=volume, target=target).to_bytes()
     with DSStore.open(str(path), 'w+') as d:
         d['.']['bwsp'] = dict(ShowToolbar=False, ShowSidebar=False, ShowStatusBar=False, ShowPathbar=False, ShowTabView=False,
-            ContainerShowSidebar=False, WindowBounds='{{220, 180}, {660, 592}}', PreviewPaneVisibility=False)
+            ContainerShowSidebar=False, WindowBounds='{{220, 180}, {600, 422}}', PreviewPaneVisibility=False)
         d['.']['icvp'] = dict(viewOptionsVersion=1, backgroundType=2, backgroundColorRed=0.05, backgroundColorGreen=0.05,
             backgroundColorBlue=0.05, backgroundImageAlias=alias, gridOffsetX=0.0, gridOffsetY=0.0,
             gridSpacing=100.0, arrangeBy='none', showIconPreview=True, showItemInfo=False, labelOnBottom=True,
-            textSize=13.0, iconSize=96.0)
+            textSize=13.0, iconSize=80.0)
         d['.']['vstl'] = ('type', b'icnv')
         d['.']['vSrn'] = ('long', 1)
-        d['Sonuvi.app']['Iloc'] = (175, 225)
-        d['Applications']['Iloc'] = (485, 225)
-        d['打开隐私与安全性.inetloc']['Iloc'] = (330, 410)
+        d['Sonuvi.app']['Iloc'] = (186, 171)
+        d['Applications']['Iloc'] = (414, 171)
+        d['双击打开设置.inetloc']['Iloc'] = (526, 278)
 
 
 def finalize_catalog(image, store_file):
@@ -130,7 +130,7 @@ def main():
     subprocess.run(['/bin/cp','-cR',str(app),str(staged)],check=True)
     (stage/'.background').mkdir(exist_ok=True)
     tools=Path(__file__).resolve().parent
-    shortcut=stage/'打开隐私与安全性.inetloc'
+    shortcut=stage/'双击打开设置.inetloc'
     shortcut.write_bytes(plistlib.dumps({'URL':'x-apple.systempreferences:com.apple.preference.security?General'}))
     subprocess.run(['/usr/bin/swift','-module-cache-path',str(tools.parent/'build/module-cache'),str(tools/'PrivacyShortcutIcon.swift'),str(shortcut),str(stage/'.background/privacy-icon.png')],check=True)
     subprocess.run(['/usr/bin/swift','-module-cache-path',str(tools.parent/'build/module-cache'),str(tools/'InstallerBackground.swift'),str(stage/'.background/install.png')]+(['--bundled-voice'] if bundled else []),check=True)
@@ -138,7 +138,7 @@ def main():
     if not link.is_symlink():link.symlink_to('/Applications',target_is_directory=True)
     docs=stage/'.Documentation';docs.mkdir(exist_ok=True)
     for name in ('LICENSE','THIRD_PARTY_NOTICES.txt'):shutil.copy2(app/'Contents/Resources'/name,docs/name)
-    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。选择替换后，从应用程序打开。\n首次打开若提示“无法验证开发者”或“Apple 无法检查”，请点“完成”“好”或“取消”关闭提示，先不要点“移到废纸篓”。然后双击安装窗口下方的“打开隐私与安全性”，在“安全性”区域找到 Sonuvi，点击“仍要打开”，再按系统提示确认。若未自动定位，请手动打开“系统设置 → 隐私与安全性”，向下滚动到“安全性”；需先尝试打开一次 Sonuvi 才会出现对应提示。真正损坏或被系统判定包含恶意内容的文件不适用此流程，应重新下载并核对来源。\n该入口只是系统设置链接，不运行脚本，不修改权限或隔离标记。辅助功能和屏幕录制仍需在系统设置中授权。\n本地语音资源在应用内按需下载，包含运行环境及28个英文音色；下载后可以离线朗读，后续支持独立更新。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
+    (docs/'使用说明.txt').write_text(volume_name + '\n\n请先退出旧版，将 Sonuvi.app 拖入 Applications。选择替换后，从应用程序打开。\n首次打开若提示“无法验证开发者”或“Apple 无法检查”，请点“完成”“好”或“取消”关闭提示，先不要点“移到废纸篓”。然后双击安装窗口提示栏右侧的“双击打开设置”，在“隐私与安全性”的“安全性”区域找到 Sonuvi，点击“仍要打开”，再按系统提示确认。若未自动定位，请手动打开“系统设置 → 隐私与安全性”，向下滚动到“安全性”；需先尝试打开一次 Sonuvi 才会出现对应提示。真正损坏或被系统判定包含恶意内容的文件不适用此流程，应重新下载并核对来源。\n该入口只是系统设置链接，不运行脚本，不修改权限或隔离标记。辅助功能和屏幕录制仍需在系统设置中授权。\n本地语音资源在应用内按需下载，包含运行环境及28个英文音色；下载后可以离线朗读，后续支持独立更新。翻译 API 可以稍后配置。\nApple Silicon / macOS 14.0+，至少预留3GB。\n个人分享版本，尚未公证；接收者按系统提示处理首次打开检查。\n',encoding='utf-8')
     if bundled:
         readme=docs/'使用说明.txt'
         readme.write_text(readme.read_text().replace('本地语音资源在应用内按需下载，包含运行环境及28个英文音色；下载后可以离线朗读，后续支持独立更新。', '已内置本地朗读模型、运行环境及28个英文音色；首次使用自动在本机准备，无需另行下载。英文朗读免费且可离线使用，后续模型支持独立更新。'))
