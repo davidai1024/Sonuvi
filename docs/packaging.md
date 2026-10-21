@@ -61,3 +61,9 @@ DMG 内包含应用、Applications 链接、拖拽安装背景、首次打开修
 打包命令可附加 `--prepare-release --source-ref '<对应源码的完整提交 SHA>'`，自动从 DMG 读取版本并准备发布文件。随后双击仓库根目录的 **发布到GitHub.command**。已有 DMG 也可单独准备，详见 [通用发布流程](releasing.md)。
 
 首次打开修复工具本身也可能被 Gatekeeper 拦截。终端运行测试应使用独立测试应用，附加下载隔离标记后，以 `/bin/zsh` 运行脚本并传入 `--app` 和 `--no-open`，确认标记清除且未启动应用。该测试不代表浏览器下载后可直接双击通过。正式分发仍需 Developer ID 签名和公证。
+
+## 同版本双安装包
+
+官网同时提供 `Sonuvi-Mac.dmg`（轻量版）与 `Sonuvi-Mac-Offline.dmg`（完整朗读版）。两者须使用同一版本的应用代码；完整包加入 `BundledVoice` 并设置 `SonuviIncludesVoice=true` 后重新签名。`build.sh` 已通过 `SONUVI_BUNDLED_VOICE` 支持完整包构建。安装背景、使用说明和首次打开修复工具会根据该标记选择相应文案和下载地址。
+
+为已发布的版本追加完整包时，保留原轻量包，上传完整包，并更新包含两个文件的 `SHA256SUMS.txt`；不要用单包发布流程替换该版本。确认完整包的首次离线准备与 28 个音色可用后，再发布官网双下载入口。轻量版的本地朗读模型按需下载免费，翻译 API 费用另计。

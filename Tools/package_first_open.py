@@ -16,12 +16,13 @@ def package(app, destination):
         raise ValueError('Invalid version')
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
     digest = hashlib.sha256((app / 'Contents/MacOS/Sonuvi').read_bytes()).hexdigest()
+    asset = 'Sonuvi-Mac-Offline.dmg' if info.get('SonuviIncludesVoice') else 'Sonuvi-Mac.dmg'
     template = Path(__file__).resolve().parents[1] / 'support/Sonuvi-First-Open-v0.4.19.command'
     text = template.read_text().replace('official v0.4.19 build', 'official v' + version + ' build')
     values = {
         'SUPPORTED_VERSION': version,
         'EXPECTED_SHA256': digest,
-        'DOWNLOAD_URL': 'https://github.com/davidai1024/Sonuvi/releases/download/v' + version + '/Sonuvi-Mac.dmg',
+        'DOWNLOAD_URL': 'https://github.com/davidai1024/Sonuvi/releases/download/v' + version + '/' + asset,
     }
     for name, value in values.items():
         text, count = re.subn(r"^" + name + r"='[^']*'$", name + "='" + value + "'", text, flags=re.M)
