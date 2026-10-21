@@ -18,9 +18,10 @@ let arrow = NSBezierPath(); arrow.move(to: NSPoint(x: 290, y: 335)); arrow.line(
 arrow.move(to: NSPoint(x: 356, y: 346)); arrow.line(to: NSPoint(x: 368, y: 335)); arrow.line(to: NSPoint(x: 356, y: 324))
 arrow.lineWidth = 2; arrow.lineCapStyle = .round; arrow.lineJoinStyle = .round
 NSColor.black.withAlphaComponent(0.28).setStroke(); arrow.stroke()
-text("先完成拖拽安装；首次打开受阻时可尝试下方工具", y: 235, size: 12, weight: .regular, alpha: 0.58)
-text("更新时请先退出旧版，再拖入替换", y: 213, size: 10, weight: .regular, alpha: 0.38)
-text("工具也可能被拦截：到「隐私与安全性」选择「仍要打开」", y: 52, size: 10, weight: .regular, alpha: 0.40)
+text("首次打开若提示「无法验证开发者」或「Apple 无法检查」", y: 232, size: 12, weight: .regular, alpha: 0.68)
+text("先点「完成／好／取消」关闭提示，不要点「移到废纸篓」。", y: 210, size: 12, weight: .medium, alpha: 0.78)
+text("双击下方入口，在「安全性」中找到 Sonuvi，点击「仍要打开」。", y: 188, size: 11, weight: .regular, alpha: 0.62)
+text("若未自动定位：系统设置 → 隐私与安全性 → 向下找到「安全性」", y: 55, size: 10, weight: .regular, alpha: 0.48)
 let includesVoice = CommandLine.arguments.contains("--bundled-voice")
 text(includesVoice ? "Apple Silicon  ·  macOS 14.0+  ·  已内置 28 种英文音色" : "Apple Silicon  ·  macOS 14.0+  ·  本地模型按需免费下载", y: 25, size: 10, weight: .regular, alpha: 0.30)
 NSGraphicsContext.restoreGraphicsState()

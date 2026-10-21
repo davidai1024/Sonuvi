@@ -52,7 +52,7 @@ python3 -m venv .packaging-venv
   --workdir "$PWD/dmg-work"
 ```
 
-DMG 内包含应用、Applications 链接、拖拽安装背景、首次打开修复脚本与说明。修复脚本在应用完成最终签名后生成，自动固定该应用的版本和主程序 SHA256；生成后不要再修改或重签应用，否则应重新打包。脚本以真实 Finder 文件图标出现在安装窗口下方，并带有工具图标和隐藏扩展名。替换已安装应用由 Finder 的原生对话框处理。打包脚本会校验 DMG 完整性；分享前还需验证应用签名、断网朗读和目标设备兼容性。
+DMG 内包含应用、Applications 链接、拖拽安装背景与“打开隐私与安全性.inetloc”系统设置链接，不再包含修复脚本。链接内容为 `x-apple.systempreferences:com.apple.preference.security?General`，仅打开系统设置，不修改隔离标记或任何权限；用户需在首次打开受阻后手动点击“仍要打开”。在不同系统上可能需要手动滚动到“安全性”。替换已安装应用由 Finder 原生对话框处理。
 
 若分发 GPL 应用二进制，请一并提供与构建对应的完整源码及所需许可证。第三方资源的许可边界见仓库根目录 `THIRD_PARTY_NOTICES.txt`。
 
@@ -60,10 +60,8 @@ DMG 内包含应用、Applications 链接、拖拽安装背景、首次打开修
 
 打包命令可附加 `--prepare-release --source-ref '<对应源码的完整提交 SHA>'`，自动从 DMG 读取版本并准备发布文件。随后双击仓库根目录的 **发布到GitHub.command**。已有 DMG 也可单独准备，详见 [通用发布流程](releasing.md)。
 
-首次打开修复工具本身也可能被 Gatekeeper 拦截。终端运行测试应使用独立测试应用，附加下载隔离标记后，以 `/bin/zsh` 运行脚本并传入 `--app` 和 `--no-open`，确认标记清除且未启动应用。该测试不代表浏览器下载后可直接双击通过。正式分发仍需 Developer ID 签名和公证。
-
 ## 同版本双安装包
 
-官网同时提供 `Sonuvi-Mac.dmg`（轻量版）与 `Sonuvi-Mac-Offline.dmg`（完整朗读版）。两者须使用同一版本的应用代码；完整包加入 `BundledVoice` 并设置 `SonuviIncludesVoice=true` 后重新签名。`build.sh` 已通过 `SONUVI_BUNDLED_VOICE` 支持完整包构建。安装背景、使用说明和首次打开修复工具会根据该标记选择相应文案和下载地址。
+官网同时提供 `Sonuvi-Mac.dmg`（轻量版）与 `Sonuvi-Mac-Offline.dmg`（完整朗读版）。两者须使用同一版本的应用代码；完整包加入 `BundledVoice` 并设置 `SonuviIncludesVoice=true` 后重新签名。`build.sh` 已通过 `SONUVI_BUNDLED_VOICE` 支持完整包构建。安装背景和使用说明根据该标记选择对应的模型准备文案。系统设置入口在两个版本中相同。
 
 为已发布的版本追加完整包时，保留原轻量包，上传完整包，并更新包含两个文件的 `SHA256SUMS.txt`；不要用单包发布流程替换该版本。确认完整包的首次离线准备与 28 个音色可用后，再发布官网双下载入口。轻量版的本地朗读模型按需下载免费，翻译 API 费用另计。
