@@ -41,7 +41,7 @@ def store(path, metadata=None):
         d['.']['vSrn'] = ('long', 1)
         d['Sonuvi.app']['Iloc'] = (186, 171)
         d['Applications']['Iloc'] = (414, 171)
-        d['双击打开设置.inetloc']['Iloc'] = (526, 278)
+        d['双击打开设置.inetloc']['Iloc'] = (510, 260)
 
 
 def finalize_catalog(image, store_file):
