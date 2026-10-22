@@ -1,6 +1,8 @@
 // Sonuvi — GPL-3.0.
 import Foundation
 import Darwin
+import Security
+import CryptoKit
 
 enum PermissionDestination: String { case settings, onboarding }
 
@@ -143,7 +145,9 @@ struct PermissionResetReport {
     var cleared: [PermissionResetService] = []
     var failed: [PermissionResetService] = []
     var message: String {
-        if failed.isEmpty { return "旧权限记录已清理，请重新开启辅助功能和屏幕录制。" }
+        if failed.isEmpty {
+            return L10n.text("旧权限记录已清理，请重新开启：") + cleared.map { L10n.text($0.title) }.joined(separator: "、")
+        }
         return L10n.text("未能清理以下权限，请在系统设置中移除 Sonuvi 后重新添加：") + failed.map { L10n.text($0.title) }.joined(separator: "、")
     }
 }
@@ -151,14 +155,63 @@ extension AccessibilityRepair {
     static func resetBoth(bundleID: String?, execute: ([String]) async throws -> Void = { args in
         try await run(executable: URL(fileURLWithPath: "/usr/bin/tccutil"), arguments: args)
     }) async throws -> PermissionResetReport {
+        try await resetServices(bundleID: bundleID, services: PermissionResetService.allCases, execute: execute)
+    }
+    static func resetServices(bundleID: String?, services: [PermissionResetService], execute: ([String]) async throws -> Void = { args in
+        try await run(executable: URL(fileURLWithPath: "/usr/bin/tccutil"), arguments: args)
+    }) async throws -> PermissionResetReport {
         // Validate the entire plan before the first mutation.
-        let commands = try PermissionResetService.allCases.map { ($0, try arguments(bundleID: bundleID, service: $0)) }
+        _ = try arguments(bundleID: bundleID)
+        let selected = PermissionResetService.allCases.filter { services.contains($0) }
+        let commands = try selected.map { ($0, try arguments(bundleID: bundleID, service: $0)) }
         var report = PermissionResetReport()
         for (service, args) in commands {
             do { try await execute(args); report.cleared.append(service) }
             catch { report.failed.append(service) }
         }
         return report
+    }
+}
+
+/// A migration hint, never permission evidence or authority to reset TCC.
+/// Compare the certificate, not the build number or replacement app's inode.
+struct SigningPermissionMigration {
+    let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    static var currentIdentity: String? {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var information: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
+              let info = information as? [String: Any],
+              let certificates = info[kSecCodeInfoCertificates as String] as? [SecCertificate],
+              let certificate = certificates.first else { return nil }
+        let digest = SHA256.hash(data: SecCertificateCopyData(certificate) as Data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+    func observe(identity: String?, installed: Bool, returningUser: Bool, accessibility: Bool, screen: Bool) -> Bool {
+        guard installed, let identity, !identity.isEmpty else { return false }
+        let previous = defaults.string(forKey: "permissions.signing.identity")
+        defaults.set(identity, forKey: "permissions.signing.identity")
+        if accessibility && screen { resolve(); return false }
+        if previous != identity {
+            // Old versions stored these flags globally. They must not suppress a
+            // fresh request from a new signing identity. No OS grants are changed.
+            if !accessibility { defaults.removeObject(forKey: "accessibilityPermissionRequested") }
+            if !screen { defaults.removeObject(forKey: "screenPermissionRequested") }
+            defaults.set(returningUser, forKey: "permissions.signing.migrationPending")
+        }
+        defaults.synchronize()
+        return defaults.bool(forKey: "permissions.signing.migrationPending")
+    }
+    func resolve() {
+        defaults.removeObject(forKey: "permissions.signing.migrationPending")
+        defaults.synchronize()
+    }
+    static func unavailable(accessibility: Bool, screen: Bool) -> [PermissionResetService] {
+        PermissionResetService.allCases.filter { $0 == .accessibility ? !accessibility : !screen }
     }
 }
 

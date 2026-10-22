@@ -83,6 +83,31 @@ func runPermissionTests() async {
     check(installation.shouldRepair(fingerprint: "migration", installed: true, returningUser: true, accessibility: false, screen: true), "Older versions without a marker migrate once when permission is missing")
     check(!installation.shouldRepair(fingerprint: "fixed-signing-migration", installed: true, returningUser: true, accessibility: false, screen: true, preserveExistingAuthorization: true), "Fixed signing migration never clears a valid Screen Recording permission")
     check(!installation.shouldRepair(fingerprint: "sparkle-update", installed: true, returningUser: true, accessibility: true, screen: false, preserveExistingAuthorization: true), "Sparkle upgrade preserves Accessibility when Screen Recording was declined")
+    let migration = SigningPermissionMigration(defaults: defaults)
+    defaults.set(true, forKey: "accessibilityPermissionRequested")
+    defaults.set(true, forKey: "screenPermissionRequested")
+    check(migration.observe(identity: "fixed-certificate", installed: true, returningUser: true, accessibility: false, screen: true), "An old installation without a signing marker gets a migration recovery hint")
+    check(!defaults.bool(forKey: "accessibilityPermissionRequested") && defaults.bool(forKey: "screenPermissionRequested"), "Migration clears only the obsolete request flag, keeping a valid permission untouched")
+    check(migration.observe(identity: "fixed-certificate", installed: true, returningUser: true, accessibility: false, screen: true), "Unresolved migration survives a relaunch")
+    migration.resolve()
+    defaults.set(true, forKey: "accessibilityPermissionRequested")
+    check(!migration.observe(identity: "fixed-certificate", installed: true, returningUser: true, accessibility: false, screen: true), "A normal same-certificate update never reopens a dismissed migration")
+    check(defaults.bool(forKey: "accessibilityPermissionRequested"), "Same-certificate updates retain request state when permission was declined")
+    check(migration.observe(identity: "another-certificate", installed: true, returningUser: true, accessibility: false, screen: true), "A genuinely changed certificate can need a new migration hint")
+    check(!migration.observe(identity: "another-certificate", installed: true, returningUser: true, accessibility: true, screen: true), "Real system grants resolve the migration hint")
+    check(!migration.observe(identity: "uninstalled-preview", installed: false, returningUser: true, accessibility: false, screen: false) && defaults.string(forKey: "permissions.signing.identity") == "another-certificate", "DMG and preview copies do not replace the installed signing marker")
+    defaults.removeObject(forKey: "permissions.signing.identity")
+    check(!migration.observe(identity: "fresh-fixed", installed: true, returningUser: false, accessibility: false, screen: false), "A fresh fixed-signed install has ordinary onboarding, not a stale-record warning")
+    check(SigningPermissionMigration.unavailable(accessibility: true, screen: false) == [.screenCapture], "Selective repair excludes valid Accessibility authorization")
+    check(SigningPermissionMigration.unavailable(accessibility: false, screen: true) == [.accessibility], "Selective repair excludes valid Screen Recording authorization")
+    if Bundle.main.object(forInfoDictionaryKey: "SonuviFixedSigning") as? Bool == true {
+        check(SigningPermissionMigration.currentIdentity?.count == 64, "Migration identity comes from the running app's actual signing certificate")
+    }
+    var selectiveCommands: [[String]] = []
+    do {
+        let selective = try await AccessibilityRepair.resetServices(bundleID: "com.wusir.musetranslate", services: [.screenCapture, .screenCapture], execute: { selectiveCommands.append($0) })
+        check(selectiveCommands == [["reset", "ScreenCapture", "com.wusir.musetranslate"]] && selective.cleared == [.screenCapture], "An explicit selective repair deduplicates and touches only the unavailable service")
+    } catch { check(false, "Selective repair succeeds") }
     check(InstallationPermissionState.isInstalled("/Applications/Sonuvi.app") && !InstallationPermissionState.isInstalled("/Volumes/Sonuvi/Sonuvi.app"), "Installed copies distinguished from mounted disk image")
     check(StartupDestination.resolve(onboardingComplete: false, accessibility: false, screen: false) == .onboarding, "First launch retains onboarding")
     check(StartupDestination.resolve(onboardingComplete: true, accessibility: false, screen: true) == .permissions, "Missing Accessibility opens Permissions")

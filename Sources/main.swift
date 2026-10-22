@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import Carbon
 import OSLog
+import ScreenCaptureKit
 
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let permissionReturn = PermissionReturnState()
     let accessibilityRepair = AccessibilityRepairState()
     let installationPermissions = InstallationPermissionState()
+    let permissionMigration = SigningPermissionMigration()
     let relaunch = RelaunchCoordinator()
     var permissionAction: Task<Void, Never>?
     var leftForPermission = false
@@ -104,6 +106,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.openSettings = { [weak self] in self?.showSettings() }
         model.requestPermission = { [weak self] screen in self?.requestPermission(screen: screen) }
         model.repairPermissions = { [weak self] in self?.repairPermissions() }
+        model.repairStalePermissions = { [weak self] in
+            let services = SigningPermissionMigration.unavailable(accessibility: SelectionReader.trusted, screen: CGPreflightScreenCaptureAccess())
+            guard !services.isEmpty else { self?.syncPermissionMonitors(); return }
+            self?.repairPermissions(services: services)
+        }
+        model.dismissPermissionMigration = { [weak self] in
+            self?.permissionMigration.resolve(); self?.model.permissionMigrationPending = false
+        }
         model.restartApplication = { [weak self] in self?.restartApplication() }
         model.restartOnboarding = { [weak self] in
             guard let self, !self.permissionRequestInProgress, !self.restartInProgress else { return }
@@ -276,6 +286,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let resuming = self.accessibilityRepair.consume()
             let defaults = UserDefaults.standard
             let returning = self.onboarding.completed || defaults.bool(forKey: "accessibilityPermissionRequested") || defaults.bool(forKey: "screenPermissionRequested")
+            if Bundle.main.object(forInfoDictionaryKey: "SonuviFixedSigning") as? Bool == true {
+                self.model.permissionMigrationPending = self.permissionMigration.observe(
+                    identity: SigningPermissionMigration.currentIdentity,
+                    installed: InstallationPermissionState.isInstalled(Bundle.main.bundlePath),
+                    returningUser: returning, accessibility: self.model.permissionGranted, screen: self.model.screenPermission)
+            }
             let repair = self.installationPermissions.shouldRepair(
                 fingerprint: InstallationPermissionState.fingerprint(),
                 installed: InstallationPermissionState.isInstalled(Bundle.main.bundlePath),
@@ -305,6 +321,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let granted = SelectionReader.trusted
         let changed = model.permissionGranted != granted
         model.permissionGranted = granted; model.screenPermission = CGPreflightScreenCaptureAccess()
+        if model.permissionMigrationPending && granted && model.screenPermission {
+            permissionMigration.resolve(); model.permissionMigrationPending = false
+        }
         if changed { selectionLog.info("Accessibility permission changed: \(granted)") }
         if !granted || reinstall {
             if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
@@ -650,9 +669,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do { try await self.relaunch.arm(watchingPermission: true) }
             catch { self.permissionIssue(error.localizedDescription) }
             if screen {
-                let requested = UserDefaults.standard.bool(forKey: "screenPermissionRequested")
                 UserDefaults.standard.set(true, forKey: "screenPermissionRequested"); UserDefaults.standard.synchronize()
-                if !requested { _ = CGRequestScreenCaptureAccess() }
+                // Request through ScreenCaptureKit itself. The old remembered
+                // flag / CG-only request could leave this new identity unlisted.
+                _ = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
                 if !CGPreflightScreenCaptureAccess() {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                 }
@@ -664,7 +684,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
     }
-    func repairPermissions(beforeInitialPresentation: Bool = false) {
+    func repairPermissions(beforeInitialPresentation: Bool = false, services: [PermissionResetService] = PermissionResetService.allCases) {
         guard startupPresentation.canPresent || beforeInitialPresentation else { return }
         guard !preview && !permissionRequestInProgress && !restartInProgress else { return }
         if !onboardingVisible { model.settingsTab = "权限" }
@@ -678,7 +698,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Arm first so a successful reset never strands the user in a
                 // process with cached access or without an automatic relaunch.
                 try await self.relaunch.arm(watchingPermission: false)
-                let report = try await AccessibilityRepair.resetBoth(bundleID: Bundle.main.bundleIdentifier)
+                let report = try await AccessibilityRepair.resetServices(bundleID: Bundle.main.bundleIdentifier, services: services)
                 let defaults = UserDefaults.standard
                 for service in report.cleared {
                     defaults.removeObject(forKey: service == .accessibility ? "accessibilityPermissionRequested" : "screenPermissionRequested")
@@ -689,6 +709,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.finishFailedStartupRepair(beforeInitialPresentation); return
                 }
                 defaults.set(report.message, forKey: "permissions.repair.notice")
+                if report.failed.isEmpty { self.permissionMigration.resolve(); self.model.permissionMigrationPending = false }
                 self.accessibilityRepair.prepare(); defaults.synchronize()
                 self.startupPresentation.beginRelaunch()
                 self.restartInProgress = true

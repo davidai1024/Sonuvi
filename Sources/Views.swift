@@ -165,6 +165,7 @@ struct SettingsView: View {
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                 .background(LinearGradient(colors: [(permissionsReady ? Color.green : .blue).opacity(0.10), Color.primary.opacity(0.015)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 20))
                 .museGlass(20)
+            PermissionMigrationNotice(model: model)
             rows("权限", detail: "按需开启，授权完成后自动更新状态。") {
                 permissionRow("辅助功能", detail: "读取你主动选中的文字。", symbol: "hand.raised", granted: model.permissionGranted) {
                     model.requestPermission?(false)
@@ -439,6 +440,24 @@ struct SettingsView: View {
         guard !value.isEmpty else { return }
         do { try model.saveAPIKey(value); key = ""; replacingKey = false; message = "" }
         catch { message = error.localizedDescription }
+    }
+}
+
+struct PermissionMigrationNotice: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        if model.permissionMigrationPending {
+            VStack(alignment: .leading, spacing: 10) {
+                LText("系统开关已开，但仍无法使用？").font(.system(size: 13, weight: .semibold))
+                LText("旧版的授权记录可能仍绑定旧签名。修复只清理当前不可用的 Sonuvi 权限，重启后再由你重新授权；设置、API Key 和模型都会保留。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    Button(L10n.text(model.permissionRepairing ? "正在修复…" : "修复旧授权记录")) { model.repairStalePermissions?() }
+                    Button(L10n.text("稍后处理")) { model.dismissPermissionMigration?() }.buttonStyle(.plain).foregroundStyle(.secondary)
+                }.disabled(model.permissionRepairing)
+            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        }
     }
 }
 

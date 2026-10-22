@@ -240,7 +240,8 @@ struct OnboardingView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3)
             }.padding(.top, 4)
             }.onboardingFrame(.permissions)
-            if state.awaitingPermissionReturn {
+            PermissionMigrationNotice(model: model)
+            if state.awaitingPermissionReturn && !model.permissionMigrationPending {
                 VStack(alignment: .leading, spacing: 10) {
                     LText(model.permissionGranted && model.screenPermission ? "授权已就绪，点击「继续」前往下一步。" : "已在系统设置中开启，但状态仍未更新？")
                         .font(.system(size: 12)).foregroundStyle(.secondary)

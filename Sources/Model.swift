@@ -33,6 +33,7 @@ final class AppModel: ObservableObject {
     @Published var permissionGranted = false
     @Published var permissionMessage = ""
     @Published var permissionRepairing = false
+    @Published var permissionMigrationPending = false
     @Published var keyAccessRequired = false
     @Published var keyAccessIssue = ""
     @Published var screenPermission = false
@@ -91,6 +92,8 @@ final class AppModel: ObservableObject {
     var onLocalSelection: ((NSPoint, Int, Bool) -> Void)?
     var requestPermission: ((Bool) -> Void)?
     var repairPermissions: (() -> Void)?
+    var repairStalePermissions: (() -> Void)?
+    var dismissPermissionMigration: (() -> Void)?
     var restartApplication: (() -> Void)?
     var restartOnboarding: (() -> Void)?
     private var task: Task<Void, Never>?

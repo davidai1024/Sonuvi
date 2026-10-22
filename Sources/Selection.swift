@@ -6,15 +6,15 @@ import Carbon
 @MainActor
 enum SelectionReader {
     static var trusted: Bool { AXIsProcessTrusted() }
-    // Explicit user action only. Register with TCC once; subsequent clicks
-    // open Settings directly. Polling never requests permission.
+    // Explicit user action only. Re-register the running signing identity;
+    // an old build's remembered request does not prove this identity was granted.
     static func openPermissionSettings() {
         guard !trusted else { return }
-        if UserDefaults.standard.bool(forKey: "accessibilityPermissionRequested") {
+        let requested = UserDefaults.standard.bool(forKey: "accessibilityPermissionRequested")
+        UserDefaults.standard.set(true, forKey: "accessibilityPermissionRequested")
+        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        if requested {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-        } else {
-            UserDefaults.standard.set(true, forKey: "accessibilityPermissionRequested")
-            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         }
     }
     // Only called once after the user explicitly repairs and relaunches.
