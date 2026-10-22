@@ -572,5 +572,22 @@
   "旧版的授权记录可能仍绑定旧签名。修复只清理当前不可用的 Sonuvi 权限，重启后再由你重新授权；设置、API Key 和模型都会保留。": "An older authorization may still belong to the previous signing identity. Repair clears only unavailable Sonuvi permissions, then restarts for you to authorize again. Settings, API Key, and models are preserved.",
   "修复旧授权记录": "Repair Old Authorization",
   "稍后处理": "Later",
-  "旧权限记录已清理，请重新开启：": "Old records cleared. Please authorize again: "
+  "旧权限记录已清理，请重新开启：": "Old records cleared. Please authorize again: ",
+  "有更新": "Update",
+  "下载中": "Downloading",
+  "校验中": "Verifying",
+  "重启并更新": "Restart & Update",
+  "安装中": "Installing",
+  "今天不再提示": "Hide for today",
+  "更新至 {0}…": "Update to {0}…",
+  "查看更新下载进度…": "View Update Download…",
+  "正在校验更新…": "Verifying Update…",
+  "重启并更新至 {0}…": "Restart & Update to {0}…",
+  "正在安装更新…": "Installing Update…",
+  "新版本 {0} 可下载": "Version {0} is available to download",
+  "正在下载新版本 {0}": "Downloading version {0}",
+  "正在校验新版本 {0}": "Verifying version {0}",
+  "新版本 {0} 已下载，重启后完成更新。": "Version {0} is downloaded. Restart to finish updating.",
+  "正在安装新版本 {0}": "Installing version {0}",
+  "新版本 {0} 可用": "Version {0} is available"
 }

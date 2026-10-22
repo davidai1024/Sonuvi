@@ -94,13 +94,14 @@ struct TranslateView: View {
         .accessibilityIdentifier("translation.source-return")
     }
 
-    private var toolbar: some View {
+    var toolbar: some View {
         HStack(spacing: 2) {
             tool(model.keepOnTop ? "pin.fill" : "pin", model.keepOnTop ? "取消置顶" : "窗口置顶") {
                 model.keepOnTop.toggle()
                 UserDefaults.standard.set(model.keepOnTop, forKey: "keepOnTop")
             }.foregroundStyle(model.keepOnTop ? Color.accentColor : .secondary)
-            Spacer()
+            Spacer(minLength: 0)
+            AppUpdateNotice(updates: model.updates)
             if let id = model.sourceApp, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 18, height: 18)
                     .help(L10n.text("选词来源：" + url.deletingPathExtension().lastPathComponent)).padding(.trailing, 4)

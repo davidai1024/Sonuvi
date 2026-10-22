@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let readingBar = ReadingBarController()
     let browserServer = BrowserMessageServer()
     let menuMotion = MenuMotion()
+    let updateBadge = UpdateStatusBadge(frame: .zero)
     var mouseMonitor: Any?
     var localMonitor: Any?
     var workspaceObserver: Any?
@@ -423,6 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func updateMenu() {
         guard status != nil else { return }
+        updateStatusBadge()
         let menu = NSMenu(); menu.delegate = self; populateMenu(menu); status.menu = menu
         // The native application menu also owns these equivalents while this
         // accessory app is active; the status menu alone is not an edit route.
@@ -457,6 +459,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             actions.submenu = submenu
         }
+    }
+    func updateStatusBadge() {
+        guard let button = status?.button else { return }
+        if updateBadge.superview == nil {
+            updateBadge.translatesAutoresizingMaskIntoConstraints = false
+            updateBadge.setAccessibilityElement(false)
+            button.addSubview(updateBadge)
+            NSLayoutConstraint.activate([
+                updateBadge.widthAnchor.constraint(equalToConstant: 5),
+                updateBadge.heightAnchor.constraint(equalToConstant: 5),
+                updateBadge.leadingAnchor.constraint(equalTo: button.centerXAnchor, constant: 5),
+                updateBadge.topAnchor.constraint(equalTo: button.topAnchor, constant: 3)
+            ])
+        }
+        updateBadge.isHidden = !model.updates.hasUpdate
+        updateBadge.needsDisplay = true
+        let title = model.updates.availableVersion.map { "Sonuvi · " + L10n.text("新版本 \($0) 可用") } ?? "Sonuvi"
+        button.toolTip = title; button.setAccessibilityLabel(title)
     }
     func menuWillOpen(_ menu: NSMenu) { populateMenu(menu); menuMotion.active = true }
     func menuDidClose(_ menu: NSMenu) { menuMotion.active = false }
@@ -1011,6 +1031,8 @@ else if CommandLine.arguments.contains("--browser-test") { MainActor.assumeIsola
 else if CommandLine.arguments.contains("--preference-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runPreferenceInteractionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--onboarding-layout-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runOnboardingLayoutTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--translation-layout-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runTranslationLayoutTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--update-connection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; app.setActivationPolicy(.accessory); Task { @MainActor in await runUpdateConnectionTest(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--update-reminder-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runUpdateReminderTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--permission-test") { Task { @MainActor in await runPermissionTests(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--editor-test") { MainActor.assumeIsolated { runEditorTests() } }
