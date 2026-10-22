@@ -32,7 +32,7 @@ await click({ menuItemId: 'read', selectionText: 'Read this' });
 assert.equal(messages[1].data.action, 'read');
 await click({ menuItemId: 'sonuvi', selectionText: 'Not an action' });
 await click({ menuItemId: 'read', selectionText: '' });
-await click({ menuItemId: 'translate', selectionText: 'a'.repeat(6001) });
+await click({ menuItemId: 'translate', selectionText: 'a'.repeat(200001) });
 assert.equal(messages.length, 2);
 chrome.runtime.sendNativeMessage = async () => { throw Error('Native host unavailable'); };
 await click({ menuItemId: 'read', selectionText: 'Retry fixture' });

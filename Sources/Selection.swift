@@ -120,7 +120,7 @@ enum SelectionReader {
                   CFGetTypeID(rangeValue) == AXValueGetTypeID() else { return .empty }
             var range = CFRange()
             guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range),
-                  range.location >= 0, range.length > 0, range.length <= 6000 else { return .empty }
+                  range.location >= 0, range.length > 0, range.length <= TextLimits.utf16Units else { return .empty }
             var value: CFTypeRef?
             if valid(), AXUIElementCopyParameterizedAttributeValue(node, kAXStringForRangeParameterizedAttribute as CFString, rangeValue, &value) == .success,
                let text = SelectionText.usable(value as? String) { return .text(text) }
@@ -211,7 +211,7 @@ enum SelectionReader {
         let up = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false)
         down?.flags = .maskCommand; up?.flags = .maskCommand
         down?.postToPid(pid); up?.postToPid(pid)
-        for _ in 0..<12 {
+        for _ in 0..<45 {
             // Finish restoration even if a newer selection cancels this task.
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.035) { continuation.resume() }

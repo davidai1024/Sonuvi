@@ -24,7 +24,7 @@ struct BrowserBridgeMain {
               let header = readExactly(4) else { reply(BrowserReply(ok: false, error: "浏览器连接无效。")) }
         let length = header.withUnsafeBytes { UInt32(littleEndian: $0.loadUnaligned(as: UInt32.self)) }
         guard length > 0, length <= BrowserProtocol.maximumBytes, let payload = readExactly(Int(length)),
-              var request = try? BrowserRequest.decode(payload) else { reply(BrowserReply(ok: false, error: "请选择 1–6000 个字符后再使用 Sonuvi。")) }
+              var request = try? BrowserRequest.decode(payload) else { reply(BrowserReply(ok: false, error: "请选择 1–20 万个字符后再使用 Sonuvi。")) }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         guard let token = BrowserProtocol.token(in: support) else { reply(BrowserReply(ok: false, error: "请先在 Sonuvi 设置中启用浏览器连接。")) }
         request.token = token

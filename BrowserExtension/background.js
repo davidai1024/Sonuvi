@@ -21,7 +21,7 @@ chrome.runtime.onStartup.addListener(installMenus);
 chrome.contextMenus.onClicked.addListener(async info => {
   if (!['translate', 'read'].includes(info.menuItemId)) return;
   const text = typeof info.selectionText === 'string' ? info.selectionText : '';
-  if (!text.trim() || Array.from(text).length > 6000) { markError(t('limit')); return; }
+  if (!text.trim() || Array.from(text).length > 200000) { markError(t('limit')); return; }
   try {
     const result = await chrome.runtime.sendNativeMessage(HOST, { version: 1, action: info.menuItemId, text });
     markError(result?.ok ? '' : result?.error || t('missing'));

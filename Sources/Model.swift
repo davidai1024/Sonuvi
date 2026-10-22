@@ -4,8 +4,10 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
+    private var sourceIsLong = false
+    private var sourceClassification: (kind: InputKind, direction: Direction) = (.sentence, .toChinese)
     @Published var source = "" {
-        didSet { if oldValue != source { sourceApp = nil; cancel(); stopSpeaking(); result = ""; word = nil; error = "" } }
+        didSet { if oldValue != source { sourceIsLong = source.count > 128; sourceClassification = (sourceIsLong ? .sentence : TextRules.kind(source), TextRules.direction(source)); sourceApp = nil; cancel(); stopSpeaking(); result = ""; word = nil; error = "" } }
     }
     @Published var result = ""
     @Published var word: WordResult?
@@ -94,8 +96,10 @@ final class AppModel: ObservableObject {
     private var currentID = UUID()
     private var toastID = UUID()
     private var cache: [String: (String, WordResult?)] = [:]
-    var effectiveKind: InputKind { inputKind == .auto ? TextRules.kind(source) : inputKind }
-    var direction: Direction { TextRules.direction(source) }
+    private var translationWork: TranslationWork?
+    private var translationWorkKey = ""
+    var effectiveKind: InputKind { sourceIsLong ? .sentence : (inputKind == .auto ? sourceClassification.kind : inputKind) }
+    var direction: Direction { sourceClassification.direction }
     var englishText: String { direction == .toChinese ? source : (word?.translation ?? result) }
     var speechInstalled: Bool { runtime.availablePython != nil }
     var selectedVoiceAvailable: Bool {
@@ -196,6 +200,10 @@ final class AppModel: ObservableObject {
     func cancel() {
         if ocrBusy { cancelOCR?() }
         if readingTranslation { readingTranslation = false; readingStatus = nil }
+        if busy, let work = translationWork, effectiveKind != .word {
+            result = work.output
+            statusText = result.isEmpty ? "" : "已取消，已完成的译文已保留。"
+        }
         currentID = UUID(); task?.cancel(); task = nil; busy = false }
     func translate(readAfter: Bool = false, presentation: ReadingPresentation = .inline) {
         if previewMode { error = "此窗口仅用于界面预览。"; if readAfter { readingStatus = error }; return }
@@ -209,7 +217,7 @@ final class AppModel: ObservableObject {
         result = ""; word = nil; error = ""; recoverySettingsTab = nil; statusText = ""
         let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { error = "请先划选或输入文字。"; return }
-        guard text.count <= 6000 else { error = "单次最多 6000 个字符，请缩短后再翻译。"; return }
+        guard text.count <= TextLimits.characters else { error = "单次最多支持 20 万字符，请分批翻译。"; return }
         let key: String
         do { key = try KeyStore.read(); hasKey = true; keyAccessRequired = false; keyAccessIssue = "" }
         catch {
@@ -220,7 +228,12 @@ final class AppModel: ObservableObject {
         let dir = direction
         let name = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = name.isEmpty ? "deepseek-flash" : name
-        let cacheKey = "\(model)|\(dir.rawValue)|\(kind.rawValue)|\(text)"
+        let cacheKey = "literal-v2|\(model)|\(dir.rawValue)|\(kind.rawValue)|\(text)"
+        if translationWorkKey != cacheKey {
+            translationWorkKey = cacheKey; translationWork = kind == .word ? nil : TranslationWork(text)
+        }
+        let work = translationWork
+        if let work { result = work.output }
         if let cached = cache[cacheKey] { usage.translation(text: text, kind: kind, app: sourceApp, cached: true); result = cached.0; word = cached.1; if autoRead || readAfter { speak(presentation: readAfter ? presentation : .inline) }; return }
         let id = currentID
         let originApp = sourceApp
@@ -229,37 +242,53 @@ final class AppModel: ObservableObject {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let req = try DeepSeekClient.request(text: text, kind: kind, direction: dir, model: model, key: key)
-                var output = ""
-                for attempt in 0...1 {
-                    do {
-                        output = try await DeepSeekClient.stream(req) { [weak self] text in
-                            guard let self, self.currentID == id else { return }
-                            if kind == .sentence { self.result = text }
+                let output: String
+                if let work {
+                    output = try await work.run(send: { part, update in
+                        let req = try DeepSeekClient.request(text: part, kind: .sentence, direction: dir, model: model, key: key)
+                        return try await DeepSeekClient.stream(req, onDelta: update)
+                    }, onUpdate: { [weak self] value in
+                        guard let self, self.currentID == id, !Task.isCancelled else { return }
+                        self.result = value
+                    }, onProgress: { [weak self] part, total, retrying in
+                        guard let self, self.currentID == id, !Task.isCancelled else { return }
+                        self.statusText = retrying ? "连接暂时中断，正在重试第 \(part)/\(total) 段…"
+                            : (total > 1 ? "正在翻译第 \(part)/\(total) 段…" : "正在翻译…")
+                    })
+                } else {
+                    let req = try DeepSeekClient.request(text: text, kind: kind, direction: dir, model: model, key: key)
+                    var value = ""
+                    for attempt in 0...1 {
+                        do { value = try await DeepSeekClient.stream(req) { _ in }; break }
+                        catch TranslateError.retryable(let message) {
+                            guard attempt == 0 else { throw TranslateError.message(message) }
+                            self.statusText = "连接暂时中断，正在重试…"
+                            try await Task.sleep(nanoseconds: 800_000_000)
+                            try Task.checkCancellation()
                         }
-                        break
-                    } catch TranslateError.retryable(let message) {
-                        guard attempt == 0 else { throw TranslateError.message(message) }
-                        self.statusText = "连接暂时中断，正在重试…"
-                        try await Task.sleep(nanoseconds: 800_000_000)
-                        try Task.checkCancellation()
                     }
+                    output = value
                 }
                 try Task.checkCancellation()
                 guard self.currentID == id else { return }
                 if kind == .word { self.word = try WordResult.parse(output); self.result = self.word?.translation ?? "" }
                 else { self.result = output }
-                if self.cache.count >= 100 { self.cache.removeAll() }
-                self.cache[cacheKey] = (self.result, self.word)
+                if text.count <= 12000 {
+                    if self.cache.count >= 30 { self.cache.removeAll() }
+                    self.cache[cacheKey] = (self.result, self.word)
+                }
                 self.usage.translation(text: text, kind: kind, app: originApp, cached: false)
                 self.busy = false; self.statusText = ""
                 if self.autoRead || readAfter { self.speak(presentation: readAfter ? presentation : .inline) }
             } catch {
                 guard self.currentID == id, !Task.isCancelled else { return }
-                self.busy = false; self.result = ""; self.word = nil
+                self.busy = false; self.result = work?.output ?? ""; self.word = nil; self.statusText = ""
                 if let error = error as? TranslateError { self.error = error.localizedDescription }
                 else if error is DecodingError { self.error = "词典结果格式不完整，请重试或切换句子模式。" }
                 else { self.error = "网络连接失败或超时，请检查网络后重试。" }
+                if let work, !work.completed.isEmpty {
+                    self.error = "翻译在第 \(work.completed.count + 1)/\(work.parts.count) 段中断，已完成的译文已保留。" + self.error
+                }
                 if readAfter { self.readingTranslation = false; self.readingStatus = self.error }
             }
         }

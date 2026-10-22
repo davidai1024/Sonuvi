@@ -45,12 +45,12 @@ struct SelectionLookupState {
 enum SelectionText {
     static func usable(_ text: String?) -> String? {
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              text.count <= 6000 else { return nil }
+              text.count <= TextLimits.characters else { return nil }
         return text
     }
     static func substring(_ text: String, location: Int, length: Int) -> String? {
         let value = text as NSString
-        guard location >= 0, length > 0, length <= 6000,
+        guard location >= 0, length > 0, length <= TextLimits.utf16Units,
               location <= value.length, length <= value.length - location else { return nil }
         return usable(value.substring(with: NSRange(location: location, length: length)))
     }

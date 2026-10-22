@@ -5,8 +5,18 @@ enum BrowserProtocol {
     static let host = "com.wusir.sonuvi.browser"
     static let extensionID = "mgadkmbkjhbofgafpdkdclljmbdlnbac"
     static let origin = "chrome-extension://" + extensionID + "/"
-    static let port = "com.wusir.sonuvi.browser.v1"
-    static let maximumBytes = 65_536
+    static let productionPort = "com.wusir.sonuvi.browser.v1"
+    static var port: String {
+        #if SONUVI_BROWSER_FIXTURE
+        return ProcessInfo.processInfo.environment["SONUVI_BROWSER_FIXTURE_PORT"] ?? productionPort
+        #else
+        // Test processes get an isolated local port; the shipped helper always
+        // uses productionPort. No user setting changes the production channel.
+        if CommandLine.arguments.contains("--browser-test"), let fixture = ProcessInfo.processInfo.environment["SONUVI_BROWSER_FIXTURE_PORT"] { return fixture }
+        return productionPort
+        #endif
+    }
+    static let maximumBytes = TextLimits.messageBytes
     static func tokenFile(in support: URL) -> URL {
         support.appendingPathComponent("MuseTranslate/Browser/connection.token")
     }
@@ -27,14 +37,14 @@ struct BrowserRequest: Codable {
         guard request.version == 1 else { throw BrowserRequestError.invalid }
         if request.action != .ping {
             guard let text = request.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  text.count <= 6000 else { throw BrowserRequestError.invalid }
+                  text.count <= TextLimits.characters else { throw BrowserRequestError.invalid }
         }
         return request
     }
 }
 enum BrowserRequestError: LocalizedError {
     case invalid
-    var errorDescription: String? { "请选择 1–6000 个字符后再使用 Sonuvi。" }
+    var errorDescription: String? { "请选择 1–20 万个字符后再使用 Sonuvi。" }
 }
 struct BrowserReply: Codable {
     let ok: Bool

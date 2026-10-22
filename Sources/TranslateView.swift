@@ -185,6 +185,10 @@ struct TranslateView: View {
                 if model.busy || model.ocrRecognizing { ProgressView().controlSize(.mini) }
             }.foregroundStyle(.secondary).padding(.horizontal, 10).frame(height: 28)
             VStack(alignment: .leading, spacing: 10) {
+                if !model.statusText.isEmpty {
+                    LText(model.statusText).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("translation.progress")
+                }
                 if !model.error.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Label(L10n.text(model.error), systemImage: "exclamationmark.circle").textSelection(.enabled)
@@ -197,20 +201,21 @@ struct TranslateView: View {
                             Button(L10n.text("截图翻译")) { model.startOCR?() }
                         }.buttonStyle(.borderless)
                     }.font(.system(size: 12)).foregroundStyle(.secondary)
-                } else if let word = model.word {
+                }
+                if let word = model.word {
                     dictionary(word)
                 } else if !model.result.isEmpty {
                     Text(model.result).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                } else if model.ocrRecognizing {
+                } else if model.error.isEmpty && model.ocrRecognizing {
                     LText("正在本机识别文字，随后自动翻译…")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .frame(minHeight: 44, alignment: .topLeading)
-                } else if model.busy {
-                    LText(model.statusText.isEmpty ? "正在翻译…" : model.statusText)
+                } else if model.error.isEmpty && model.busy {
+                    LText(model.statusText.isEmpty ? "正在翻译…" : "译文将逐段显示")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .frame(minHeight: 44, alignment: .topLeading)
-                } else {
+                } else if model.error.isEmpty {
                     LText(hasSource ? "点击翻译查看结果" : "译文将显示在这里")
                         .font(.system(size: 11, weight: .regular)).foregroundStyle(.tertiary)
                         .frame(minHeight: 44, alignment: .topLeading)

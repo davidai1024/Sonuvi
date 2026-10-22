@@ -547,5 +547,13 @@
   "Sonuvi 正在启动，请稍后重试。": "Sonuvi is starting. Try again shortly.",
   "关闭连接": "Disable",
   "浏览器连接已关闭。": "Browser connection disabled.",
-  "请先在 Sonuvi 设置中启用浏览器连接。": "Enable the browser connection in Sonuvi settings first."
+  "请先在 Sonuvi 设置中启用浏览器连接。": "Enable the browser connection in Sonuvi settings first.",
+  "单次最多支持 20 万字符，请分批翻译。": "Translate up to 200,000 characters at a time. Split longer text into batches.",
+  "正在翻译第 {0}/{1} 段…": "Translating part {0}/{1}…",
+  "连接暂时中断，正在重试第 {0}/{1} 段…": "Connection interrupted. Retrying part {0}/{1}…",
+  "翻译在第 {0}/{1} 段中断，已完成的译文已保留。{2}": "Translation stopped at part {0}/{1}. Completed translations have been kept. {2}",
+  "已取消，已完成的译文已保留。": "Cancelled. Completed translations have been kept.",
+  "译文将逐段显示": "Translations will appear part by part.",
+  "这段译文未能完整生成，请重试。": "This part could not be completed. Please retry.",
+  "译文未完整生成，正在调整分段。": "Translation incomplete. Adjusting the text segments."
 }

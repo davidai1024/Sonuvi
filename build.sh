@@ -15,7 +15,7 @@ cp Resources/Brand/AppIcon.icns Resources/Brand/MenuBar*.png "$app_dir/Contents/
 cp Resources/Brand/icon_128x128@2x.png "$app_dir/Contents/Resources/BrandIcon.png"
 /usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Tools/Relaunch.swift -framework AppKit -o "$app_dir/Contents/MacOS/SonuviRelaunch"
 /usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir/Contents/MacOS/SonuviRelaunch"
-/usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Sources/BrowserProtocol.swift Tools/BrowserBridge.swift -framework AppKit -framework CoreFoundation -o "$app_dir/Contents/MacOS/SonuviBrowserBridge"
+/usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Sources/TextLimits.swift Sources/BrowserProtocol.swift Tools/BrowserBridge.swift -framework AppKit -framework CoreFoundation -o "$app_dir/Contents/MacOS/SonuviBrowserBridge"
 /usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir/Contents/MacOS/SonuviBrowserBridge"
 /bin/cp -R BrowserExtension "$app_dir/Contents/Resources/"
 # New build directories avoid mutating a previously signed payload.
@@ -37,8 +37,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.28</string>
-<key>CFBundleVersion</key><string>41</string>
+<key>CFBundleShortVersionString</key><string>0.4.29</string>
+<key>CFBundleVersion</key><string>42</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>

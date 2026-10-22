@@ -49,7 +49,16 @@ func runNetworkTests() async {
     catch { fatalError("Incomplete stream classification wrong") }
     TranslationFixtureProtocol.body = fragment("truncated", finish: "length") + "data: [DONE]\n\n"
     do { _ = try await DeepSeekClient.stream(request, configuration: config()) { _ in }; fatalError("Truncation accepted") }
-    catch TranslateError.message { count += 1 }
+    catch TranslateError.outputLimit { count += 1 }
     catch { fatalError("Truncation classification wrong") }
+    TranslationFixtureProtocol.body = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"private thought\"}}]}\n\n" + fragment("你好", finish: "stop") + "data: [DONE]\n\n"
+    do {
+        let output = try await DeepSeekClient.stream(request, configuration: config()) { _ in }
+        guard output == "你好" else { fatalError("Reasoning leaked into translation") }; count += 1
+    } catch { fatalError("Reasoning fixture failed") }
+    TranslationFixtureProtocol.body = fragment("partial") + "data: [DONE]\n\n"
+    do { _ = try await DeepSeekClient.stream(request, configuration: config()) { _ in }; fatalError("DONE without stop accepted") }
+    catch TranslateError.message { count += 1 }
+    catch { fatalError("Missing finish classification wrong") }
     print("PASS: \(count) streaming and error-handling fixtures")
 }

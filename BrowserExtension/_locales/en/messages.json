@@ -12,7 +12,7 @@
     "message": "Enable the browser connection in Sonuvi → Settings → General first."
   },
   "limit": {
-    "message": "Select 1–6000 characters."
+    "message": "Select 1–200,000 characters."
   },
   "connecting": {
     "message": "Checking connection…"

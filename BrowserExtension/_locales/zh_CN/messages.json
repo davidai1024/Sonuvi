@@ -12,7 +12,7 @@
     "message": "请先在 Sonuvi 设置 → 通用中，启用浏览器连接。"
   },
   "limit": {
-    "message": "请选择 1–6000 个字符。"
+    "message": "请选择 1–20 万个字符。"
   },
   "connecting": {
     "message": "正在检测连接…"

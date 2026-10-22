@@ -15,9 +15,12 @@ func runBrowserIntegrationTests() async {
     for body in ["{\"version\":1,\"action\":\"delete\",\"text\":\"file\"}", "{\"version\":2,\"action\":\"read\",\"text\":\"x\"}", "{\"version\":1,\"action\":\"read\",\"text\":\" \"}"] {
         check((try? BrowserRequest.decode(Data(body.utf8))) == nil, "Unsupported, empty and version-mismatched browser requests are rejected")
     }
-    let tooLong = try! JSONEncoder().encode(BrowserRequest(version: 1, action: .translate, text: String(repeating: "a", count: 6001)))
+    let longSelection = String(repeating: "中英 mixed selection. ", count: 1800)
+    let longData = try! JSONEncoder().encode(BrowserRequest(version: 1, action: .translate, text: longSelection))
+    check((try? BrowserRequest.decode(longData))?.text == longSelection, "Long browser selections arrive complete")
+    let tooLong = try! JSONEncoder().encode(BrowserRequest(version: 1, action: .translate, text: String(repeating: "a", count: TextLimits.characters + 1)))
     check((try? BrowserRequest.decode(tooLong)) == nil, "Browser cannot bypass the selected-text length limit")
-    check((try? BrowserRequest.decode(Data(repeating: 65, count: 65_537))) == nil, "Oversized native messages are rejected before decoding")
+    check((try? BrowserRequest.decode(Data(repeating: 65, count: BrowserProtocol.maximumBytes + 1))) == nil, "Oversized native messages are rejected before decoding")
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sonuvi-Browser-Fixture-" + UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let support = directory.appendingPathComponent("Library/Application Support")
@@ -31,7 +34,8 @@ func runBrowserIntegrationTests() async {
             check((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600, "Connection manifest is private to the current user")
         }
     } catch { check(false, "Fixture manifests write successfully") }
-    let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/SonuviBrowserBridge")
+    let helper = ProcessInfo.processInfo.environment["SONUVI_BROWSER_FIXTURE_HELPER"].map { URL(fileURLWithPath: $0) }
+        ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/SonuviBrowserBridge")
     func invoke(_ request: Data, origin: String = BrowserProtocol.origin, fragmented: Bool = false) async -> BrowserReply? {
         await Task.detached {
             let process = Process(); process.executableURL = helper; process.arguments = [origin]
@@ -71,7 +75,7 @@ func runBrowserIntegrationTests() async {
     for action in [BrowserRequest.Action.ping, .translate, .read] {
         let data = try! JSONEncoder().encode(BrowserRequest(version: 1, action: action, text: action == .ping ? nil : "Only this synthetic selection"))
         let result = await invoke(data, fragmented: true)
-        check(result?.ok == true && received.last?.action == action, "Real helper and local IPC deliver exactly one request: \(action.rawValue)")
+        check(result?.ok == true && received.last?.action == action, "Real helper and local IPC deliver exactly one request: \(action.rawValue); reply=\(result?.error ?? "none")")
     }
     check(received.count == 3 && received[1].text == "Only this synthetic selection", "Local bridge preserves selection without clipboard, URL or API key access")
     server.stop()

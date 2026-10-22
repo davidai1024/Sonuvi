@@ -928,7 +928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             error.pointee = L10n.text("请先选中文字。") as NSString; return
         }
-        guard text.count <= 6000 else { error.pointee = L10n.text("单次最多支持 6000 个字符。") as NSString; return }
+        guard text.count <= TextLimits.characters else { error.pointee = L10n.text("单次最多支持 20 万字符，请分批翻译。") as NSString; return }
         didReceiveService = true; dismissSelectionBubble(); captureTask?.cancel()
         // A service pasteboard does not identify its sender. The foreground app
         // can change while Services dispatches, so do not misattribute usage.
@@ -982,6 +982,7 @@ else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIso
 else if CommandLine.arguments.contains("--editor-test") { MainActor.assumeIsolated { runEditorTests() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
+else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--network-test") { Task { await runNetworkTests(); exit(0) }; dispatchMain() }
 else {
     MainActor.assumeIsolated {
