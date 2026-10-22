@@ -3,6 +3,25 @@ set -euo pipefail
 cd "$(dirname "$0")"
 app_dir="${MUSE_BUILD_DIR:-$PWD/build}/Sonuvi.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$PWD/build/module-cache"
+signing_profile="${SONUVI_SIGNING_PROFILE:-}"
+if [[ -z "$signing_profile" && "${SONUVI_PREVIEW:-0}" != "1" && -f "$PWD/.release-local.json" ]]; then
+  signing_profile="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("signing_profile", ""))' "$PWD/.release-local.json")"
+fi
+if [[ -n "$signing_profile" && ! -f "$signing_profile" ]]; then
+  printf 'Configured fixed signing profile is missing; refusing to change signing identity.\n' >&2
+  exit 1
+fi
+if [[ "${SONUVI_REQUIRE_FIXED_SIGNING:-0}" == "1" && -z "$signing_profile" ]]; then
+  printf 'Fixed signing profile is required; refusing ad-hoc release signing.\n' >&2
+  exit 1
+fi
+sign_code() {
+  if [[ -n "$signing_profile" ]]; then
+    /usr/bin/python3 "$PWD/Tools/sign_code.py" --profile "$signing_profile" "$1"
+  else
+    /usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$1"
+  fi
+}
 /usr/bin/swiftc -j 4 -swift-version 5 -O -target arm64-apple-macosx13.0 \
   -module-cache-path "$PWD/build/module-cache" Sources/*.swift Tests/*.swift \
   -framework AVFoundation -framework AppKit -framework SwiftUI -framework ApplicationServices \
@@ -14,9 +33,9 @@ cp Resources/*.py Resources/uv Resources/UV-LICENSE-* LICENSE THIRD_PARTY_NOTICE
 cp Resources/Brand/AppIcon.icns Resources/Brand/MenuBar*.png "$app_dir/Contents/Resources/"
 cp Resources/Brand/icon_128x128@2x.png "$app_dir/Contents/Resources/BrandIcon.png"
 /usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Tools/Relaunch.swift -framework AppKit -o "$app_dir/Contents/MacOS/SonuviRelaunch"
-/usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir/Contents/MacOS/SonuviRelaunch"
+sign_code "$app_dir/Contents/MacOS/SonuviRelaunch"
 /usr/bin/swiftc -swift-version 5 -O -target arm64-apple-macosx13.0 -module-cache-path "$PWD/build/module-cache" Sources/TextLimits.swift Sources/BrowserProtocol.swift Tools/BrowserBridge.swift -framework AppKit -framework CoreFoundation -o "$app_dir/Contents/MacOS/SonuviBrowserBridge"
-/usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir/Contents/MacOS/SonuviBrowserBridge"
+sign_code "$app_dir/Contents/MacOS/SonuviBrowserBridge"
 /bin/cp -R BrowserExtension "$app_dir/Contents/Resources/"
 # New build directories avoid mutating a previously signed payload.
 if [[ -d "$app_dir/Contents/Resources/BundledVoice" ]]; then
@@ -73,6 +92,6 @@ if [[ "${SONUVI_PREVIEW:-0}" == "1" ]]; then
 fi
 # Reuse an existing code-signing identity across updates when supplied.
 # Never broaden designated requirements or change the system trust store.
-/usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$app_dir"
+sign_code "$app_dir"
 "$app_dir/Contents/MacOS/Sonuvi" --self-test
 printf '\n构建完成：%s\n' "$app_dir"

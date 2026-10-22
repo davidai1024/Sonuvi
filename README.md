@@ -312,3 +312,11 @@ python3 Tools/prepare_preview.py --source build/Sonuvi.app --output build-previe
 ```
 
 键盘选中（Cmd+A、Shift＋方向键及其他选词快捷键）也会触发划词按钮，取词跟随当前焦点，不依赖鼠标位置。复制、粘贴、Esc 和 Sonuvi 自身的执行快捷键不会重新弹出旧选区。
+
+### 本地固定签名验证
+
+发布构建可使用固定自签名身份，配置保存在不入库的 `.release-local.json` 的 `signing_profile` 字段；也可通过 `SONUVI_SIGNING_PROFILE` 显式传入配置路径。正式构建同时设置 `SONUVI_REQUIRE_FIXED_SIGNING=1`，身份缺失时停止，不退回临时签名。
+
+构建会按辅助程序、主应用的顺序签名。添加对应源码等资源后，使用 `python3 Tools/sign_code.py /path/to/Sonuvi.app` 重新签名；指定配置时添加 `--profile /private/path/profile.json`。工具只使用既有身份，不生成证书、不更改证书信任。证书、私钥和配置口令不能提交到仓库。
+
+独立钥匙串测试已验证同一证书签署的新旧程序可以沿用测试凭据授权，临时签名对照程序被拒绝。辅助功能、屏幕录制以及其他电脑上的升级权限行为仍需单独验证。公开版 0.4.29 尚未迁移到这个新身份。

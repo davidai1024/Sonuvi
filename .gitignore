@@ -21,3 +21,10 @@ BundledVoice/
 *.dmg
 .release-local.json
 *.release-build.json
+
+# Local code-signing credentials must never be committed.
+*.p12
+*.pfx
+*.keychain
+*.keychain-db
+.signing-private/
