@@ -15,7 +15,7 @@
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载翻译版 · 16.2 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.29/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 462 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.29/Sonuvi-Mac-Offline.dmg)**
+**[下载翻译版 · 16.3 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.29/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 462 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.29/Sonuvi-Mac-Offline.dmg)**
 
 Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.29
 
