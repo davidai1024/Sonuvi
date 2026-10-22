@@ -81,6 +81,8 @@ func runPermissionTests() async {
     check(defaults.string(forKey: "permissions.install.fingerprint") == "resuming", "DMG launch does not change installed-copy marker")
     defaults.removeObject(forKey: "permissions.install.fingerprint")
     check(installation.shouldRepair(fingerprint: "migration", installed: true, returningUser: true, accessibility: false, screen: true), "Older versions without a marker migrate once when permission is missing")
+    check(!installation.shouldRepair(fingerprint: "fixed-signing-migration", installed: true, returningUser: true, accessibility: false, screen: true, preserveExistingAuthorization: true), "Fixed signing migration never clears a valid Screen Recording permission")
+    check(!installation.shouldRepair(fingerprint: "sparkle-update", installed: true, returningUser: true, accessibility: true, screen: false, preserveExistingAuthorization: true), "Sparkle upgrade preserves Accessibility when Screen Recording was declined")
     check(InstallationPermissionState.isInstalled("/Applications/Sonuvi.app") && !InstallationPermissionState.isInstalled("/Volumes/Sonuvi/Sonuvi.app"), "Installed copies distinguished from mounted disk image")
     check(StartupDestination.resolve(onboardingComplete: false, accessibility: false, screen: false) == .onboarding, "First launch retains onboarding")
     check(StartupDestination.resolve(onboardingComplete: true, accessibility: false, screen: true) == .permissions, "Missing Accessibility opens Permissions")

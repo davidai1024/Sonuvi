@@ -148,6 +148,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menuImage = NSImage(named: "MenuBar") ?? NSImage(systemSymbolName: "character.bubble.fill", accessibilityDescription: "Sonuvi")
         menuImage?.isTemplate = true; menuImage?.size = NSSize(width: 18, height: 18)
         status.button?.image = menuImage
+        model.updates.onChange = { [weak self] in self?.updateMenu() }
+        model.updates.beforeInstall = { [weak self] in
+            guard let self else { return }
+            self.relaunch.cancel()
+            self.model.usage.persist()
+            UserDefaults.standard.synchronize()
+        }
+        model.updates.start(preview: preview)
         updateMenu()
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .leftMouseDown, .leftMouseUp, .scrollWheel]) { [weak self] event in
             self?.model.usage.touch()
@@ -272,7 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 fingerprint: InstallationPermissionState.fingerprint(),
                 installed: InstallationPermissionState.isInstalled(Bundle.main.bundlePath),
                 returningUser: returning, accessibility: self.model.permissionGranted,
-                screen: self.model.screenPermission, resumingRepair: resuming)
+                screen: self.model.screenPermission, resumingRepair: resuming,
+                preserveExistingAuthorization: Bundle.main.object(forInfoDictionaryKey: "SonuviFixedSigning") as? Bool == true)
             if !repair { self.startupPresentation.finishPreparation() }
             if resuming {
                 self.model.permissionMessage = defaults.string(forKey: "permissions.repair.notice") ?? "旧权限记录已清理，请重新开启辅助功能和屏幕录制。"
@@ -420,6 +429,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             submenu.addItem(.separator())
             let preferences = NSMenuItem(title: L10n.text("设置…"), action: #selector(showSettings), keyEquivalent: ",")
             preferences.target = self; submenu.addItem(preferences)
+            let updates = NSMenuItem(title: L10n.text(model.updates.menuTitle), action: #selector(checkForAppUpdates), keyEquivalent: "")
+            updates.target = self; updates.isEnabled = model.updates.canCheck; submenu.addItem(updates)
             if preview {
                 let menuPreview = NSMenuItem(title: L10n.text("菜单栏预览"), action: nil, keyEquivalent: "")
                 let previewMenu = NSMenu(); previewMenu.delegate = self; populateMenu(previewMenu)
@@ -459,9 +470,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appearance.submenu = sub; menu.addItem(appearance)
         item("使用统计…", #selector(showStatistics), symbol: "chart.xyaxis.line")
         item("设置…", #selector(showSettings), symbol: "gearshape", key: ",")
+        item(model.updates.menuTitle, #selector(checkForAppUpdates), symbol: "arrow.triangle.2.circlepath", enabled: model.updates.canCheck)
         menu.addItem(.separator()); item("退出 Sonuvi", #selector(quit), key: "q")
     }
     @objc func showStatistics() { model.settingsTab = "统计"; showSettings() }
+    @objc func checkForAppUpdates() { model.updates.check() }
     @objc func stopReading() { model.stopSpeaking() }
     @objc func toggleLookup() { model.mouseLookup.toggle(); UserDefaults.standard.set(model.mouseLookup, forKey: "mouseLookup"); if !model.mouseLookup { dismissSelectionBubble() }; syncPermissionMonitors(reinstall: true) }
     @objc func changeAppearance(_ sender: NSMenuItem) { model.appearance = AppearanceMode.allCases[sender.tag]; UserDefaults.standard.set(model.appearance.rawValue, forKey: "appearance") }

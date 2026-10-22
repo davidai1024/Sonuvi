@@ -555,5 +555,17 @@
   "已取消，已完成的译文已保留。": "Cancelled. Completed translations have been kept.",
   "译文将逐段显示": "Translations will appear part by part.",
   "这段译文未能完整生成，请重试。": "This part could not be completed. Please retry.",
-  "译文未完整生成，正在调整分段。": "Translation incomplete. Adjusting the text segments."
+  "译文未完整生成，正在调整分段。": "Translation incomplete. Adjusting the text segments.",
+  "应用更新": "App Updates",
+  "自动检查更新": "Check for updates automatically",
+  "检查更新…": "Check for Updates…",
+  "查看更新…": "View Update…",
+  "发现新版本 {0}…": "Version {0} Available…",
+  "新版本 {0} 已就绪": "Version {0} is available",
+  "更新应用会保留设置、API Key 和已下载的朗读模型。": "App updates preserve your settings, API Key, and downloaded voice models.",
+  "每天检查一次，有新版本时提醒；点击后再下载和安装。": "Check daily and show a reminder. Download and install when you choose.",
+  "已是最新版本。": "You're up to date.",
+  "暂时无法检查更新，请检查网络后重试。": "Unable to check for updates. Check your connection and try again.",
+  "更新服务未能启动，请稍后重试。": "The updater could not start. Please try again later.",
+  "此构建未启用应用更新，请从官网下载新版。": "App updates are unavailable in this build. Download the latest version from the website."
 }

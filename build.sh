@@ -22,13 +22,18 @@ sign_code() {
     /usr/bin/codesign --force --sign "${MUSE_SIGNING_IDENTITY:--}" "$1"
   fi
 }
+sparkle_dir="$(/usr/bin/python3 Tools/prepare_sparkle.py)"
 /usr/bin/swiftc -j 4 -swift-version 5 -O -target arm64-apple-macosx13.0 \
   -module-cache-path "$PWD/build/module-cache" Sources/*.swift Tests/*.swift \
+  -F "$sparkle_dir" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -framework AVFoundation -framework AppKit -framework SwiftUI -framework ApplicationServices \
   -framework Carbon -framework LocalAuthentication -framework Security -framework NaturalLanguage -framework Vision -framework ServiceManagement -framework CoreText -framework Charts -framework ScreenCaptureKit \
   -o "$app_dir/Contents/MacOS/Sonuvi"
 cp Resources/VoiceCatalog.json Resources/VoicePublicKey.txt "$app_dir/Contents/Resources/"
 cp Resources/English.json "$app_dir/Contents/Resources/"
+mkdir -p "$app_dir/Contents/Frameworks"
+/usr/bin/ditto "$sparkle_dir/Sparkle.framework" "$app_dir/Contents/Frameworks/Sparkle.framework"
+cp "$sparkle_dir/LICENSE" "$app_dir/Contents/Resources/SPARKLE-LICENSE.txt"
 cp Resources/*.py Resources/uv Resources/UV-LICENSE-* LICENSE THIRD_PARTY_NOTICES.txt "$app_dir/Contents/Resources/"
 cp Resources/Brand/AppIcon.icns Resources/Brand/MenuBar*.png "$app_dir/Contents/Resources/"
 cp Resources/Brand/icon_128x128@2x.png "$app_dir/Contents/Resources/BrandIcon.png"
@@ -56,8 +61,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.29</string>
-<key>CFBundleVersion</key><string>42</string>
+<key>CFBundleShortVersionString</key><string>0.4.30</string>
+<key>CFBundleVersion</key><string>43</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>
@@ -75,10 +80,24 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>NSScreenCaptureUsageDescription</key><string>仅在你使用截图翻译时截取所选区域，在本机识别文字。</string>
 </dict></plist>
 PLIST
+/usr/bin/python3 - "$app_dir/Contents/Info.plist" "$PWD/Resources/UpdatePublicKey.txt" <<'PY'
+import base64, plistlib, sys
+from pathlib import Path
+p=Path(sys.argv[1]);info=plistlib.loads(p.read_bytes());key=Path(sys.argv[2]).read_text().strip()
+assert len(base64.b64decode(key,validate=True))==32, 'Invalid update public key'
+info.update(SUFeedURL='https://sonuvi.davidai1024.com/updates/appcast.xml',SUPublicEDKey=key,
+            SUEnableAutomaticChecks=True,SUAutomaticallyUpdate=False,SUScheduledCheckInterval=86400,
+            SUVerifyUpdateBeforeExtraction=True,SURequireSignedFeed=True)
+p.write_bytes(plistlib.dumps(info))
+PY
+if [[ -n "$signing_profile" ]]; then
+  /usr/libexec/PlistBuddy -c 'Add :SonuviFixedSigning bool true' "$app_dir/Contents/Info.plist"
+fi
 if [[ -n "${SONUVI_BUNDLED_VOICE:-}" ]]; then
   /usr/bin/python3 Resources/runtime_compat.py "$app_dir" --minimum 14.0
   /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 14.0' "$app_dir/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Add :SonuviIncludesVoice bool true' "$app_dir/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set :SUFeedURL https://sonuvi.davidai1024.com/updates/appcast-full.xml' "$app_dir/Contents/Info.plist"
 fi
 if [[ -z "${SONUVI_BUNDLED_VOICE:-}" ]]; then
   /usr/libexec/PlistBuddy -c 'Add :SonuviIncludesVoice bool false' "$app_dir/Contents/Info.plist"

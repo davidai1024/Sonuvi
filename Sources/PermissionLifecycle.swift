@@ -178,11 +178,14 @@ struct InstallationPermissionState {
         let created = (attrs[.creationDate] as? Date)?.timeIntervalSince1970 ?? 0
         return "\(build):\(device):\(inode):\(created)"
     }
-    func shouldRepair(fingerprint: String, installed: Bool, returningUser: Bool, accessibility: Bool, screen: Bool, resumingRepair: Bool = false) -> Bool {
+    func shouldRepair(fingerprint: String, installed: Bool, returningUser: Bool, accessibility: Bool, screen: Bool, resumingRepair: Bool = false, preserveExistingAuthorization: Bool = false) -> Bool {
         guard installed else { return false }
         let previous = defaults.string(forKey: "permissions.install.fingerprint")
         defaults.set(fingerprint, forKey: "permissions.install.fingerprint")
         defaults.synchronize()
+        // Stable-signed upgrades must not clear another permission merely because
+        // a user declined one, or TCC has not refreshed yet. Repair stays explicit.
+        guard !preserveExistingAuthorization else { return false }
         return !resumingRepair && previous != fingerprint && (previous != nil || returningUser) && (!accessibility || !screen)
     }
 }

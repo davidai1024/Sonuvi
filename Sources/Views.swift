@@ -226,6 +226,7 @@ struct SettingsView: View {
                     Button(L10n.text("开始引导")) { model.restartOnboarding?() }.disabled(model.previewMode)
                 }
             }
+            rows("应用更新") { AppUpdateSettings(updates: model.updates) }
             rows("各应用的划词菜单", detail: "开启后，在对应应用中划选文字会显示翻译和朗读菜单；关闭后隐藏菜单。快捷键不受影响，修改立即生效。") {
                 if !model.mouseLookup { LText("划词按钮总开关已关闭；开启后，以下设置才会生效。").font(MuseLayout.detail).foregroundStyle(.secondary).padding(16) }
                 ForEach(runningApps, id: \.processIdentifier) { app in

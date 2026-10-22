@@ -53,3 +53,7 @@ DeepSeek — https://api.deepseek.com
 User-provided API key stored in macOS Keychain. Translation actions send the
 source text to the official API. Selection itself only displays a local action
 button. Usage counters are local aggregates and are not uploaded.
+
+Sparkle 2.10.0
+https://github.com/sparkle-project/Sparkle
+Copyright (c) Sparkle contributors. MIT License. Full license: SPARKLE-LICENSE.txt in the application resources.
