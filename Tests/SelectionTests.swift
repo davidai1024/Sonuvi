@@ -110,6 +110,18 @@ func runSelectionTests() async {
     nodeReads = 0
     _ = SelectionNodeSearch.resolve(hit: 1, focused: nil, parent: { $0 + 1 }, read: { _ in nodeReads += 1; return .empty }, maximumDepth: 10000)
     check(nodeReads == 8, "Browser probing never expands into an unbounded tree scan")
+    check(SelectionAccessibilityProfile.resolve(bundleID: "com.openai.codex", electron: false) == .chromium, "ChatGPT Chromium shell receives activation and its full warmup window")
+    check(SelectionAccessibilityProfile.resolve(bundleID: "com.openai.codex", electron: true) == .electron, "Electron variants retain the documented Electron activation")
+    for id in ["com.tencent.xinWeChat", "com.openai.chat", "com.openai.codex"] {
+        check(SelectionCompatibility.offersDeferredCapture(bundleID: id, copyEnabled: true), "Opaque chat selection keeps explicit actions: \(id)")
+        check(!SelectionCompatibility.offersDeferredCapture(bundleID: id, copyEnabled: false), "Copy opt-out also disables deferred actions: \(id)")
+    }
+    check(!SelectionCompatibility.offersDeferredCapture(bundleID: "com.google.Chrome", copyEnabled: true), "Chrome still requires an actual accessible selection")
+    check(!SelectionCompatibility.offersDeferredCapture(bundleID: "test.unknown", copyEnabled: true), "Unknown apps do not receive speculative menus")
+    let secureProbe = SelectionNodeSearch.probe(hit: 1, focused: 4, parent: parent, read: { $0 == 1 ? .protected : .text("secret") })
+    check(secureProbe == .protected && secureProbe.text == nil, "Protected field remains distinguishable from an unsupported selection")
+    let deepNative = SelectionNodeSearch.probe(hit: 1, focused: nil, parent: { $0 + 1 }, read: { $0 == 7 ? .text("Nested web selection") : .empty })
+    check(deepNative.text == "Nested web selection", "Embedded web selections also reach eight bounded ancestors")
     var elapsed: UInt64 = 0
     let warmingBrowser = await SelectionLookup.resolve(read: { elapsed >= 2_000_000_000 ? "Ready browser selection" : nil }, isValid: { true }, delays: SelectionAccessibilityProfile.chromium.retryDelays, wait: { elapsed += $0 })
     check(warmingBrowser == "Ready browser selection" && elapsed < 3_000_000_000, "First Chrome selection survives the two-second activation delay")

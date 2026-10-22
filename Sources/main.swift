@@ -765,10 +765,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc func translateSelection() { capture(read: false) }
     @objc func readSelection() { dismissSelectionBubble(); if model.readingActive { model.stopSpeaking(); return }; capture(read: true) }
-    func capture(read: Bool) {
+    func capture(read: Bool, expectedPID: pid_t? = nil, anchor: NSPoint? = nil) {
+        if let expectedPID, !allowsSelectionLookup(pid: expectedPID) { dismissSelectionBubble(); return }
         if needsOnboarding || onboardingVisible { showOnboarding(); return }
         dismissSelectionBubble()
-        let previous = captureTask; previous?.cancel(); captureID = UUID(); let id = captureID; let point = SelectionReader.selectionAnchor() ?? NSEvent.mouseLocation
+        let previous = captureTask; previous?.cancel(); captureID = UUID(); let id = captureID; let point = anchor ?? SelectionReader.selectionAnchor() ?? NSEvent.mouseLocation
         let originApplication = NSWorkspace.shared.frontmostApplication
         let origin = originApplication?.bundleIdentifier
         // Never read the Settings field editor (which may contain an API key).
@@ -907,15 +908,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         mouseTask?.cancel()
         mouseTask = Task { [weak self] in
             guard let self else { return }
+            var protected = false
             let text = await SelectionLookup.resolve(read: {
-                await SelectionReader.fromAccessibility(pid: pid, at: point)
+                let result = await SelectionReader.probeAccessibility(pid: pid, at: point)
+                protected = result == .protected
+                return result.text
             }, isValid: {
-                self.allowsSelectionLookup(pid: pid) && self.selectionLookup.accepts(request,
+                !protected && self.allowsSelectionLookup(pid: pid) && self.selectionLookup.accepts(request,
                     frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier)
             }, delays: SelectionReader.accessibilityProfile(pid: pid).retryDelays)
             guard let text, !Task.isCancelled else {
                 if !Task.isCancelled, self.selectionLookup.accepts(request, frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
                     self.selectionLog.debug("No accessible selection after bounded retries")
+                    if !protected { self.showDeferredSelectionBubble(pid: pid, point: point) }
                 }
                 return
             }
@@ -950,6 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if local { return self.window.isKeyWindow && self.model.mouseLookup && self.selectionLookup.accepts(request, frontPID: gesture.pid) }
                 return self.allowsSelectionLookup(pid: gesture.pid) && self.selectionLookup.accepts(request, frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier)
             }
+            var protected = false
             let text = await SelectionLookup.resolve(read: {
                 if local {
                     guard let editor = self.window.firstResponder as? NSTextView else { return nil }
@@ -957,9 +963,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 // Keyboard selection follows focus, even when the pointer is
                 // over another control. No clipboard fallback or simulated Copy.
-                return await SelectionReader.fromAccessibility(pid: gesture.pid)
-            }, isValid: valid, delays: local ? [80_000_000] : gesture.action == .select ? SelectionReader.accessibilityProfile(pid: gesture.pid).retryDelays : [180_000_000, 240_000_000])
-            guard let text, !Task.isCancelled, valid() else { return }
+                let result = await SelectionReader.probeAccessibility(pid: gesture.pid)
+                protected = result == .protected
+                return result.text
+            }, isValid: { !protected && valid() }, delays: local ? [80_000_000] : gesture.action == .select ? SelectionReader.accessibilityProfile(pid: gesture.pid).retryDelays : [180_000_000, 240_000_000])
+            guard !Task.isCancelled, valid() else { return }
+            guard let text else {
+                if !local, !protected, gesture.action == .select { self.showDeferredSelectionBubble(pid: gesture.pid, point: fallback) }
+                return
+            }
             if gesture.action == .inspect, self.lastSelection?.pid == gesture.pid, self.lastSelection?.text == text { return }
             var point = fallback
             if local, let editor = self.window.firstResponder as? NSTextView {
@@ -1000,13 +1012,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func showBubble(text: String, point: NSPoint, app: String?, local: Bool = false) {
         lastSelection = (local ? ProcessInfo.processInfo.processIdentifier : NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, text)
-        if bubble == nil {
-            bubble = BubblePanel(contentRect: NSRect(x: 0, y: 0, width: 86, height: 42), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            bubble?.isOpaque = false; bubble?.backgroundColor = .clear; bubble?.hasShadow = true
-            bubble?.level = .popUpMenu; bubble?.hidesOnDeactivate = false
-            bubble?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        }
-        bubble?.contentView = NSHostingView(rootView: SelectionBubble(translate: { [weak self] in self?.useSelection(text, app: app) }, read: { [weak self] in
+        presentSelectionBubble(point: point, translate: { [weak self] in self?.useSelection(text, app: app) }, read: { [weak self] in
             guard let self else { return }; self.dismissSelectionBubble()
             self.captureTask?.cancel(); self.readingBar.anchor = point
             // Reading a local excerpt must not replace the complete source.
@@ -1014,7 +1020,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let presentation: ReadingPresentation = local ? .inline : .floating
             if TextRules.direction(text) == .toEnglish { self.model.translate(readAfter: true, presentation: presentation) }
             else { self.model.speak(text, presentation: presentation) }
-        }))
+        })
+    }
+    func showDeferredSelectionBubble(pid: pid_t, point: NSPoint) {
+        guard allowsSelectionLookup(pid: pid), SelectionCompatibility.offersDeferredCapture(
+            bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier, copyEnabled: model.clipboardFallback) else { return }
+        lastSelection = nil
+        presentSelectionBubble(point: point, translate: { [weak self] in self?.capture(read: false, expectedPID: pid, anchor: point) },
+            read: { [weak self] in self?.capture(read: true, expectedPID: pid, anchor: point) })
+    }
+    func presentSelectionBubble(point: NSPoint, translate: @escaping () -> Void, read: @escaping () -> Void) {
+        if bubble == nil {
+            bubble = BubblePanel(contentRect: NSRect(x: 0, y: 0, width: 86, height: 42), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            bubble?.isOpaque = false; bubble?.backgroundColor = .clear; bubble?.hasShadow = true
+            bubble?.level = .popUpMenu; bubble?.hidesOnDeactivate = false
+            bubble?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        }
+        bubble?.contentView = NSHostingView(rootView: SelectionBubble(translate: translate, read: read))
         let frame = NSScreen.screens.first(where: { $0.frame.contains(point) })?.visibleFrame ?? NSScreen.main!.visibleFrame
         bubble?.setFrameOrigin(WindowGeometry.origin(near: point, size: NSSize(width: 86, height: 42), visible: frame)); bubble?.orderFrontRegardless()
     }
@@ -1034,6 +1056,8 @@ else if CommandLine.arguments.contains("--translation-layout-test") { MainActor.
 else if CommandLine.arguments.contains("--update-connection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; app.setActivationPolicy(.accessory); Task { @MainActor in await runUpdateConnectionTest(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--update-reminder-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runUpdateReminderTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--permission-test") { Task { @MainActor in await runPermissionTests(); exit(0) }; dispatchMain() }
+else if CommandLine.arguments.contains("--selection-compatibility-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionCompatibilityTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--selection-copy-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionCopyTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--editor-test") { MainActor.assumeIsolated { runEditorTests() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }

@@ -56,8 +56,18 @@ enum SelectionText {
     }
 }
 
-enum SelectionProbe {
+enum SelectionProbe: Equatable {
     case text(String), empty, protected
+    var text: String? { if case .text(let value) = self { return value }; return nil }
+}
+
+// These clients may expose no selected text at all. Offer the existing actions
+// after a real selection gesture, and capture only after the user clicks one.
+enum SelectionCompatibility {
+    static func offersDeferredCapture(bundleID: String?, copyEnabled: Bool) -> Bool {
+        guard copyEnabled, let bundleID else { return false }
+        return ["com.tencent.xinWeChat", "com.tencent.WeChat", "com.openai.chat", "com.openai.codex"].contains(bundleID)
+    }
 }
 
 // Only inspect the selected control and a few ancestors. Never scan a whole
@@ -66,6 +76,11 @@ enum SelectionNodeSearch {
     static func resolve<Node: Equatable>(hit: Node?, focused: Node?,
         parent: (Node) -> Node?, read: (Node) -> SelectionProbe,
         isValid: () -> Bool = { true }, maximumDepth: Int = 4) -> String? {
+        probe(hit: hit, focused: focused, parent: parent, read: read, isValid: isValid, maximumDepth: maximumDepth).text
+    }
+    static func probe<Node: Equatable>(hit: Node?, focused: Node?,
+        parent: (Node) -> Node?, read: (Node) -> SelectionProbe,
+        isValid: () -> Bool = { true }, maximumDepth: Int = 8) -> SelectionProbe {
         var visited: [Node] = []
         for seed in [hit, focused].compactMap({ $0 }) {
             var candidate: Node? = seed
@@ -74,17 +89,17 @@ enum SelectionNodeSearch {
                 guard !visited.contains(node) else { break }
                 visited.append(node)
                 switch read(node) {
-                case .protected: return nil
+                case .protected: return .protected
                 case .text(let text):
-                    guard isValid() else { return nil }
-                    if let text = SelectionText.usable(text) { return text }
+                    guard isValid() else { return .empty }
+                    if let text = SelectionText.usable(text) { return .text(text) }
                 case .empty: break
                 }
-                guard isValid() else { return nil }
+                guard isValid() else { return .empty }
                 candidate = parent(node)
             }
         }
-        return nil
+        return .empty
     }
 }
 
@@ -132,7 +147,7 @@ enum SelectionAccessibilityProfile: Equatable {
     case standard, electron, chromium
     static func resolve(bundleID: String?, electron: Bool) -> Self {
         if electron { return .electron }
-        let browsers: Set<String> = ["com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary", "org.chromium.Chromium", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.brave.Browser", "com.brave.Browser.beta", "com.brave.Browser.nightly", "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera"]
+        let browsers: Set<String> = ["com.openai.codex", "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary", "org.chromium.Chromium", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.brave.Browser", "com.brave.Browser.beta", "com.brave.Browser.nightly", "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera"]
         return bundleID.map { browsers.contains($0) } == true ? .chromium : .standard
     }
     var activationAttribute: String? {
