@@ -13,6 +13,27 @@ enum CaptureGeometry {
     }
 }
 
+// The pixels and their AppKit coordinate space travel together. Both the
+// selection backdrop and OCR crop use this same immutable frame.
+struct FrozenCapture {
+    let frame: CGRect
+    let image: CGImage
+    func pixelRect(_ selection: CGRect) -> CGRect {
+        let clipped = selection.intersection(frame)
+        guard !clipped.isNull, !clipped.isEmpty else { return .zero }
+        let sx = CGFloat(image.width) / frame.width
+        let sy = CGFloat(image.height) / frame.height
+        return CGRect(x: (clipped.minX - frame.minX) * sx,
+                      y: (frame.maxY - clipped.maxY) * sy,
+                      width: clipped.width * sx, height: clipped.height * sy).integral
+            .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+    func crop(_ selection: CGRect) -> CGImage? {
+        let rect = pixelRect(selection)
+        return rect.isEmpty ? nil : image.cropping(to: rect)
+    }
+}
+
 @MainActor
 final class ScreenSelection {
     private var panels: [SelectionPanel] = []
@@ -20,7 +41,7 @@ final class ScreenSelection {
     private var start: CGPoint?
     private var screenObserver: NSObjectProtocol?
 
-    func select() async throws -> CGRect? {
+    func select(snapshot: FrozenCapture) async throws -> CGRect? {
         try Task.checkCancellation()
         let result = await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
@@ -33,6 +54,8 @@ final class ScreenSelection {
                     panel.animationBehavior = .none
                     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                     let view = SelectionView(frame: NSRect(origin: .zero, size: screen.frame.size))
+                    view.layer?.contents = snapshot.crop(screen.frame)
+                    view.layer?.contentsGravity = .resize
                     view.changed = { [weak self] point, ended in self?.drag(point, ended: ended) }
                     view.cancelled = { [weak self] in self?.finish(nil) }
                     panel.contentView = view; panels.append(panel)

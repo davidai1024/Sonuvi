@@ -1,5 +1,6 @@
 // Sonuvi — GPL-3.0.
 import AppKit
+import SwiftUI
 
 @MainActor
 func runEditorTests() {
@@ -49,4 +50,92 @@ func runEditorTests() {
     check(LocalTextSelection.text(in: testWindow, at: inside) == "Local", "Window coordinates hit the selected text view")
     let outside = testWindow.convertPoint(toScreen: NSPoint(x: 300, y: 80))
     check(LocalTextSelection.text(in: testWindow, at: outside) == nil, "Clicking toolbar or empty space cannot reuse stale text")
+    // Exercise the production bridge with NSTextInputClient composition calls,
+    // including redraws while a candidate is still being composed.
+    var value = ""
+    let binding = Binding<String>(get: { value }, set: { value = $0 })
+    let representation = TranslationEditor(text: binding, height: .constant(24), focusRequest: 0, onSelection: { _, _, _ in })
+    let coordinator = TranslationEditor.Coordinator(representation)
+    let input = TranslationTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 100))
+    input.isEditable = true; input.isRichText = false; input.allowsUndo = true
+    input.delegate = coordinator
+    input.onCompositionEnded = { coordinator.commit($0) }
+    testWindow.contentView = input
+    testWindow.makeFirstResponder(input)
+    let unspecified = NSRange(location: NSNotFound, length: 0)
+    input.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0), replacementRange: unspecified)
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: input))
+    check(input.hasMarkedText() && value.isEmpty, "Uncommitted pinyin stays owned by the input method")
+    for _ in 0..<20 { coordinator.synchronize(input) }
+    check(input.string == "ni" && input.hasMarkedText(), "Unrelated SwiftUI redraws preserve the marked range")
+    input.setMarkedText("nihao", selectedRange: NSRange(location: 5, length: 0), replacementRange: unspecified)
+    input.insertText("你好", replacementRange: unspecified)
+    check(value == "你好" && input.string == value && !input.hasMarkedText(), "Chinese candidate commits once without losing characters")
+    let suffix = "，English 😀 123"
+    for character in suffix {
+        input.insertText(String(character), replacementRange: unspecified)
+        coordinator.synchronize(input)
+    }
+    check(value == "你好" + suffix && input.selectedRange().location == (value as NSString).length, "Rapid mixed Unicode typing preserves content and caret")
+    let beforeComposition = value
+    input.setMarkedText("ceshi", selectedRange: NSRange(location: 5, length: 0), replacementRange: unspecified)
+    value = "External selection"
+    coordinator.synchronize(input)
+    check(input.hasMarkedText() && input.string.hasPrefix(beforeComposition), "External source replacement does not interrupt candidate composition")
+    input.insertText("测试", replacementRange: unspecified)
+    check(value == "External selection" && input.string == value, "Deferred external source wins after composition finishes")
+    input.setSelectedRange(NSRange(location: (input.string as NSString).length, length: 0))
+    input.setMarkedText("test", selectedRange: NSRange(location: 4, length: 0), replacementRange: unspecified)
+    input.unmarkText()
+    check(value == "External selectiontest", "Unmark without a separate change notification still synchronizes text")
+    let beforeCancelled = value
+    input.setMarkedText("cancel", selectedRange: NSRange(location: 6, length: 0), replacementRange: unspecified)
+    input.insertText("", replacementRange: unspecified)
+    check(value == beforeCancelled, "Cancelling composition does not delete committed text")
+    input.undoManager?.removeAllActions()
+    let beforeUndo = value
+    input.undoManager?.beginUndoGrouping()
+    input.insertText("Z", replacementRange: unspecified)
+    input.undoManager?.endUndoGrouping()
+    let undoKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+        windowNumber: testWindow.windowNumber, context: nil, characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6)!
+    _ = TextEditingCommands.perform(undoKey, in: input)
+    check(input.string == beforeUndo && value == beforeUndo, "Undo updates the binding without replacing the native undo stack")
+    let redoKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
+        windowNumber: testWindow.windowNumber, context: nil, characters: "Z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6)!
+    _ = TextEditingCommands.perform(redoKey, in: input)
+    check(input.string == beforeUndo + "Z" && value == input.string, "Redo preserves committed text and binding")
+    value = String(repeating: "Long source 中文 😀\n", count: 5000)
+    coordinator.synchronize(input)
+    input.setSelectedRange(NSRange(location: (input.string as NSString).length, length: 0))
+    let started = ProcessInfo.processInfo.systemUptime
+    for _ in 0..<30 { input.insertText("x", replacementRange: unspecified); coordinator.synchronize(input) }
+    check(value.hasSuffix(String(repeating: "x", count: 30)), "Typing at the end of a long source does not roll back edits")
+    print("METRIC: 30 long-source native edits: \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000)) ms")
+    scroll.measureContent()
+    let measured = scroll.measurementCount
+    for _ in 0..<100 { scroll.scheduleMeasurement() }
+    RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+    check(scroll.measurementCount == measured, "Unchanged layouts do not repeatedly remeasure the full document")
+    scroll.invalidateMeasurement(); scroll.invalidateMeasurement()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+    check(scroll.measurementCount == measured + 1, "Multiple content notifications coalesce into one measurement")
+
+    let model = AppModel(); model.previewMode = true
+    model.source = String(repeating: "Long model source 中文 😀\n", count: 4000)
+    var notifications = 0
+    let observation = model.objectWillChange.sink { notifications += 1 }
+    let modelStarted = ProcessInfo.processInfo.systemUptime
+    for _ in 0..<30 { model.editSource(model.source + "x") }
+    let modelMilliseconds = Int((ProcessInfo.processInfo.systemUptime - modelStarted) * 1000)
+    check(notifications == 30, "Idle editor emits one model change per committed edit, not repeated resets")
+    print("METRIC: 30 long-source model edits: \(modelMilliseconds) ms")
+    model.editSource("hello")
+    model.translate()
+    check(model.effectiveKind == .word && model.direction == .toChinese, "Immediate Translate uses the latest edit before the debounce expires")
+    model.editSource("你好")
+    model.translate()
+    check(model.direction == .toEnglish, "Immediate Translate correctly classifies committed Chinese")
+    withExtendedLifetime(observation) {}
+
 }

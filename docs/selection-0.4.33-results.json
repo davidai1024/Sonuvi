@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-23",
+  "version": "0.4.33",
+  "build": 46,
+  "status": "draft_not_fully_accepted",
+  "public_version": "0.4.32",
+  "core_checks": 109,
+  "selection_regression_checks": 98,
+  "opaque_fixture_checks": 11,
+  "menu_test_kind": "synthetic gesture through production handlers with real foreground apps",
+  "menu_passed_apps": [
+    "com.tencent.xinWeChat",
+    "com.openai.codex",
+    "com.tencent.qq",
+    "com.bytedance.macos.feishu",
+    "com.kingsoft.xiezuo",
+    "com.kingsoft.wpsoffice.mac",
+    "com.bot.neotix.doubao",
+    "com.alibaba.tongyi"
+  ],
+  "actual_fixture_passes": [
+    {
+      "app": "com.google.Chrome",
+      "kind": "local HTML textarea",
+      "characters": 99000,
+      "exact": true,
+      "clipboard_unchanged": true
+    },
+    {
+      "app": "com.apple.Safari",
+      "kind": "local HTML textarea",
+      "characters": 99000,
+      "exact": true,
+      "clipboard_unchanged": true
+    }
+  ],
+  "wps_docx": {
+    "first_run_exact": true,
+    "clipboard_restored": true,
+    "repeat_stable": false,
+    "unresolved": [
+      "one-character mismatch",
+      "dialogs",
+      "foreground change"
+    ]
+  },
+  "wechat_actual_selection": {
+    "accepted": false,
+    "attempts": [
+      "no captured text",
+      "aborted: window moved / foreground unavailable"
+    ]
+  },
+  "not_installed": [
+    "DingTalk",
+    "WeCom",
+    "Tencent Docs desktop",
+    "Microsoft Edge"
+  ],
+  "release_allowed": false
+}

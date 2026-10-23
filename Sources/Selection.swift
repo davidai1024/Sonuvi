@@ -27,7 +27,7 @@ enum SelectionReader {
     static func fromAccessibility() -> String? {
         guard trusted, let front = NSWorkspace.shared.frontmostApplication,
               front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
-        return selectedText(pid: front.processIdentifier)
+        return selectedText(pid: front.processIdentifier).text
     }
     // AX IPC runs off the UI thread. Cancel queued work when a newer gesture
     // arrives, so unsupported controls cannot create an ever-growing backlog.
@@ -35,25 +35,32 @@ enum SelectionReader {
     // Accessed only on lookupQueue, for explicit per-process accessibility opt-ins.
     nonisolated(unsafe) private static var manualAccessibilityAttempts: [pid_t: TimeInterval] = [:]
     static func fromAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> String? {
-        guard trusted, !Task.isCancelled else { return nil }
+        await probeAccessibility(pid: pid, at: point).text
+    }
+    static func probeAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> SelectionProbe {
+        guard trusted, !Task.isCancelled else { return .empty }
         let axPoint = point.map { CGPoint(x: $0.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - $0.y) }
         let profile = accessibilityProfile(pid: pid)
         let ticket = SelectionReadTicket()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 lookupQueue.async {
-                    guard !ticket.cancelled else { continuation.resume(returning: nil); return }
+                    guard !ticket.cancelled else { continuation.resume(returning: .empty); return }
                     continuation.resume(returning: selectedText(pid: pid, at: axPoint, profile: profile, isCancelled: { ticket.cancelled }))
                 }
             }
         } onCancel: { ticket.cancel() }
     }
+    private static var profileCache: [pid_t: (url: URL?, launched: Date?, profile: SelectionAccessibilityProfile)] = [:]
     static func accessibilityProfile(pid: pid_t) -> SelectionAccessibilityProfile {
         let app = NSRunningApplication(processIdentifier: pid)
-        let electron = app?.bundleURL.map {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
-        } ?? false
-        return .resolve(bundleID: app?.bundleIdentifier, electron: electron)
+        guard let app else { profileCache.removeValue(forKey: pid); return .standard }
+        if let cached = profileCache[pid], cached.url == app.bundleURL, cached.launched == app.launchDate { return cached.profile }
+        let electron = SelectionAccessibilityProfile.containsElectron(at: app.bundleURL)
+        let profile = SelectionAccessibilityProfile.resolve(bundleID: app.bundleIdentifier, electron: electron)
+        if profileCache.count >= 64 { profileCache.removeAll() }
+        profileCache[pid] = (app.bundleURL, app.launchDate, profile)
+        return profile
     }
     static func prepareAccessibility(pid: pid_t) {
         guard trusted, pid != ProcessInfo.processInfo.processIdentifier else { return }
@@ -76,8 +83,8 @@ enum SelectionReader {
         AXUIElementSetAttributeValue(app, attribute as CFString, kCFBooleanTrue)
     }
     nonisolated private static func selectedText(pid: pid_t, at point: CGPoint? = nil,
-        profile: SelectionAccessibilityProfile = .standard, isCancelled: () -> Bool = { false }) -> String? {
-        guard AXIsProcessTrusted(), !isCancelled(), pid != ProcessInfo.processInfo.processIdentifier else { return nil }
+        profile: SelectionAccessibilityProfile = .standard, isCancelled: () -> Bool = { false }) -> SelectionProbe {
+        guard AXIsProcessTrusted(), !isCancelled(), pid != ProcessInfo.processInfo.processIdentifier else { return .empty }
         let deadline = ProcessInfo.processInfo.systemUptime + 0.24
         func valid() -> Bool { !isCancelled() && ProcessInfo.processInfo.systemUptime < deadline }
         let app = AXUIElementCreateApplication(pid)
@@ -95,7 +102,7 @@ enum SelectionReader {
             return (value as! AXUIElement)
         }
         let focused = element(attribute(app, kAXFocusedUIElementAttribute))
-        if let focused, attribute(focused, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return nil }
+        if let focused, attribute(focused, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return .protected }
         var hit: AXUIElement?
         if let point, valid() {
             AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit)
@@ -104,7 +111,7 @@ enum SelectionReader {
                 if AXUIElementGetPid(found, &hitPID) != .success || hitPID != pid { hit = nil }
             }
         }
-        return SelectionNodeSearch.resolve(hit: hit, focused: focused, parent: {
+        return SelectionNodeSearch.probe(hit: hit, focused: focused, parent: {
             element(attribute($0, kAXParentAttribute))
         }, read: { node in
             if attribute(node, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return .protected }
@@ -127,7 +134,7 @@ enum SelectionReader {
             guard let text = attribute(node, kAXValueAttribute) as? String,
                   let selected = SelectionText.substring(text, location: range.location, length: range.length) else { return .empty }
             return .text(selected)
-        }, isValid: valid, maximumDepth: profile == .chromium ? 8 : 4)
+        }, isValid: valid, maximumDepth: 8)
     }
     // AX selection bounds use a top-left screen origin; AppKit uses bottom-left.
     static func selectionAnchor() -> NSPoint? {
@@ -175,9 +182,9 @@ enum SelectionReader {
             }
         }
     }
-    // Clipboard fallback runs only after an explicit shortcut. Restore all data
+    // Clipboard fallback runs only after an explicit shortcut or menu action. Restore all data
     // types if no newer clipboard write occurred; never replace a newer user copy.
-    static func capture(allowClipboard: Bool = true) async -> String? {
+    static func capture(allowClipboard: Bool = true, pasteboard: NSPasteboard = .general) async -> String? {
         guard !Task.isCancelled, trusted, let front = NSWorkspace.shared.frontmostApplication,
               front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
         let pid = front.processIdentifier
@@ -196,7 +203,6 @@ enum SelectionReader {
             AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSubroleAttribute as CFString, &subrole)
             if subrole as? String == kAXSecureTextFieldSubrole { return nil }
         }
-        let pasteboard = NSPasteboard.general
         let originalCount = pasteboard.changeCount
         let saved: [[NSPasteboard.PasteboardType: Data]] = (pasteboard.pasteboardItems ?? []).map { item in
             var values: [NSPasteboard.PasteboardType: Data] = [:]
