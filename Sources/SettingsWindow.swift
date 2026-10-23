@@ -15,3 +15,33 @@ final class SettingsWindow: NSWindow {
         }
     }
 }
+
+/// Keychain dialogs may change application activation. Restore only the window
+/// that initiated access, including on cancel; never create a new settings page.
+@MainActor
+final class CredentialWindowPresentation {
+    private weak var origin: NSWindow?
+    private var closeObserver: NSObjectProtocol?
+    private var explicitlyClosed = false
+    private(set) var isActive = false
+    func begin(windows: [NSWindow?]) {
+        origin = windows.compactMap { $0 }.first { $0.isKeyWindow && $0.isVisible }
+            ?? windows.compactMap { $0 }.first { $0.isVisible }
+        explicitlyClosed = false; isActive = true
+        if let origin {
+            closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: origin, queue: .main) { [weak self] _ in
+                self?.explicitlyClosed = true
+            }
+        }
+    }
+    func finish() {
+        defer {
+            isActive = false; origin = nil
+            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+            closeObserver = nil
+        }
+        guard let origin, !explicitlyClosed else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        origin.makeKeyAndOrderFront(nil)
+    }
+}

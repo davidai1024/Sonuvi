@@ -158,8 +158,12 @@ final class AppModel: ObservableObject {
         keyPreview = Self.maskedKey(value)
         hasKey = true; keyAccessRequired = false; keyAccessIssue = ""
     }
+    var beginCredentialInteraction: (() -> Void)?
+    var endCredentialInteraction: (() -> Void)?
     func authorizeAPIKeyAccess(read: (Bool) throws -> String = { try KeyStore.read(allowInteraction: $0) }) throws {
         guard !previewMode else { return }
+        beginCredentialInteraction?()
+        defer { endCredentialInteraction?() }
         do {
             let value = try read(true)
             guard !value.isEmpty else { throw KeyAccessError.missing }

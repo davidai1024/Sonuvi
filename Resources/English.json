@@ -589,5 +589,7 @@
   "正在校验新版本 {0}": "Verifying version {0}",
   "新版本 {0} 已下载，重启后完成更新。": "Version {0} is downloaded. Restart to finish updating.",
   "正在安装新版本 {0}": "Installing version {0}",
-  "新版本 {0} 可用": "Version {0} is available"
+  "新版本 {0} 可用": "Version {0} is available",
+  "API Key 仍保存在钥匙串中，无需重新填写。首次迁移旧版本的 Key 时可能需要允许访问；成功后会迁移到当前固定签名版本使用。本地朗读不受影响。": "Your API key is still in Keychain. Access may be needed once to migrate a key saved by an older version. After access succeeds, Sonuvi migrates it for the current fixed-signature version. Local reading is unaffected.",
+  "API Key 已可用，设置已保留。": "API key access is ready. Your settings remain open."
 }

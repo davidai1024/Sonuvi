@@ -93,8 +93,23 @@ final class CredentialSession {
     func set(_ value: String?) { self.value = value }
 }
 
+// Never fall back to an obsolete credential when the current item exists but
+// is denied. Migration can only follow a successful, authorized legacy read.
+enum CredentialMigration {
+    static func read(current: () throws -> String?, legacy: () throws -> String,
+                     persist: (String) throws -> Void) throws -> String {
+        if let value = try current() { return value }
+        let value = try legacy()
+        guard !value.isEmpty else { throw KeyAccessError.missing }
+        // A failed copy must not lose access that the OS has already granted.
+        try? persist(value)
+        return value
+    }
+}
+
 enum KeyStore {
-    static let service = "com.wusir.musetranslate.deepseek"
+    static let service = "com.wusir.musetranslate.deepseek.fixed-signature-v1"
+    private static let legacyService = "com.wusir.musetranslate.deepseek"
     private static let session = CredentialSession()
     private static let lock = NSRecursiveLock()
 
@@ -112,19 +127,22 @@ enum KeyStore {
         defer { SecKeychainSetUserInteractionAllowed(previous.boolValue) }
         return try body()
     }
-    private static var query: [String: Any] {
+    private static var query: [String: Any] { query(for: service) }
+    private static func query(for service: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
          kSecAttrAccount as String: "api-key"]
     }
     static var containsKey: Bool {
         (try? access(interactive: false) {
             if session.hasValue { return true }
-            var request = query
-            request[kSecReturnAttributes as String] = true
-            request[kSecMatchLimit as String] = kSecMatchLimitOne
-            var result: CFTypeRef?
-            let status = SecItemCopyMatching(request as CFDictionary, &result)
-            return status == errSecSuccess || status == errSecInteractionNotAllowed || status == errSecAuthFailed
+            return [service, legacyService].contains { name in
+                var request = query(for: name)
+                request[kSecReturnAttributes as String] = true
+                request[kSecMatchLimit as String] = kSecMatchLimitOne
+                var result: CFTypeRef?
+                let status = SecItemCopyMatching(request as CFDictionary, &result)
+                return status == errSecSuccess || status == errSecInteractionNotAllowed || status == errSecAuthFailed
+            }
         }) ?? false
     }
     /// Translation never opens a password dialog. Only the explicit settings
@@ -132,22 +150,35 @@ enum KeyStore {
     static func read(allowInteraction: Bool = false) throws -> String {
         try access(interactive: allowInteraction) {
             try session.read(allowInteraction: allowInteraction) { _ in
-                var request = query
-                request[kSecReturnData as String] = true
-                request[kSecMatchLimit as String] = kSecMatchLimitOne
-                var result: CFTypeRef?
-                let status = SecItemCopyMatching(request as CFDictionary, &result)
-                if status == errSecItemNotFound { throw KeyAccessError.missing }
-                if [errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled].contains(status) {
-                    throw KeyAccessError.authorizationRequired
-                }
-                guard status == errSecSuccess else { throw KeyAccessError.unavailable(status) }
-                guard let data = result as? Data, let value = String(data: data, encoding: .utf8) else {
-                    throw KeyAccessError.unavailable(errSecDecode)
-                }
-                return value
+                try CredentialMigration.read(current: { try fetch(service) }, legacy: {
+                    guard let value = try fetch(legacyService) else { throw KeyAccessError.missing }
+                    return value
+                }, persist: { value in
+                    // A new item inherits THIS fixed-signed app's designated
+                    // requirement. Never loosen the old item's ACL or write plaintext.
+                    guard Bundle.main.object(forInfoDictionaryKey: "SonuviFixedSigning") as? Bool == true else { return }
+                    var insert = query
+                    insert[kSecValueData as String] = Data(value.utf8)
+                    insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                    let status = SecItemAdd(insert as CFDictionary, nil)
+                    guard status == errSecSuccess || status == errSecDuplicateItem else { throw KeyAccessError.unavailable(status) }
+                })
             }
         }
+    }
+    private static func fetch(_ service: String) throws -> String? {
+        var request = query(for: service)
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(request as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        if [errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled].contains(status) {
+            throw KeyAccessError.authorizationRequired
+        }
+        guard status == errSecSuccess else { throw KeyAccessError.unavailable(status) }
+        guard let data = result as? Data, let value = String(data: data, encoding: .utf8) else { throw KeyAccessError.unavailable(errSecDecode) }
+        return value
     }
     static func save(_ value: String) throws {
         try access(interactive: true) {
@@ -165,8 +196,12 @@ enum KeyStore {
     }
     static func delete() throws {
         try access(interactive: true) {
-            let status = SecItemDelete(query as CFDictionary)
-            guard status == errSecSuccess || status == errSecItemNotFound else { throw TranslateError.message("钥匙串删除失败：\(status)") }
+            // Delete legacy first: a failed deletion must not make the app fall
+            // back to a stale key after the current key has already been removed.
+            for name in [legacyService, service] {
+                let status = SecItemDelete(query(for: name) as CFDictionary)
+                guard status == errSecSuccess || status == errSecItemNotFound else { throw TranslateError.message("钥匙串删除失败：\(status)") }
+            }
             session.set(nil)
         }
     }

@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var selectionRecoveryObservers: [Any] = []
     let selectionLog = Logger(subsystem: "com.wusir.musetranslate", category: "Selection")
     let permissionReturn = PermissionReturnState()
+    let credentialPresentation = CredentialWindowPresentation()
     let accessibilityRepair = AccessibilityRepairState()
     let installationPermissions = InstallationPermissionState()
     let permissionMigration = SigningPermissionMigration()
@@ -104,6 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.readingBar.update(self.model.readingPresentation == .floating ? message : nil, isActive: self.model.readingActive, meter: self.model.playback.meter, stop: { [weak self] in self?.model.stopSpeaking() })
         }
+        model.beginCredentialInteraction = { [weak self] in
+            guard let self else { return }
+            self.credentialPresentation.begin(windows: [self.onboardingWindow, self.settings])
+        }
+        model.endCredentialInteraction = { [weak self] in self?.credentialPresentation.finish() }
         model.openSettings = { [weak self] in self?.showSettings() }
         model.requestPermission = { [weak self] screen in self?.requestPermission(screen: screen) }
         model.repairPermissions = { [weak self] in self?.repairPermissions() }
@@ -353,6 +359,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { selectionLog.info("Selection event monitor installed") }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Updater/Keychain activation is not a request to open Settings.
+        guard !model.updates.isPresentingManualCheck, !credentialPresentation.isActive else { return false }
         guard startupPresentation.canPresent && !restartInProgress else { return false }
         // Re-activation should preserve Settings/onboarding rather than create
         // a translation window over the window the user is already using.
@@ -374,7 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func applicationDidBecomeActive(_ notification: Notification) {
         if !preview { syncPermissionMonitors(reinstall: true, preserveGesture: true) }
-        if leftForPermission && !permissionRequestInProgress && !restartInProgress {
+        if leftForPermission && !permissionRequestInProgress && !restartInProgress && !model.updates.isPresentingManualCheck && !credentialPresentation.isActive {
             _ = restorePermissionWindow()
         }
     }
@@ -1067,6 +1075,8 @@ else if CommandLine.arguments.contains("--selection-compatibility-test") { MainA
 else if CommandLine.arguments.contains("--selection-copy-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionCopyTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--editor-test") { MainActor.assumeIsolated { runEditorTests() } }
+else if CommandLine.arguments.contains("--manual-update-dialog-test") { MainActor.assumeIsolated { let app = NSApplication.shared; app.setActivationPolicy(.accessory); Task { @MainActor in await runManualUpdateDialogTest(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--window-interaction-test") { MainActor.assumeIsolated { _ = NSApplication.shared; runWindowInteractionTests() } }
 else if CommandLine.arguments.contains("--menu-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; RunLoop.main.perform { MainActor.assumeIsolated { runMenuCaptureTest() } }; app.run() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }

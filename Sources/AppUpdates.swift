@@ -20,6 +20,8 @@ final class AppUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, SPUStand
     @Published private(set) var notice = ""
     var onChange: (() -> Void)?
     var beforeInstall: (() -> Void)?
+    private(set) var isPresentingManualCheck = false
+    func beginManualPresentation() { isPresentingManualCheck = true }
     private let defaults: UserDefaults
     private var panelTimer: Timer?
     private(set) var updater: SPUUpdater?
@@ -105,6 +107,7 @@ final class AppUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, SPUStand
     }
     func updatePhase(_ value: AppUpdatePhase) { phase = value; refresh() }
     func finishSession() {
+        isPresentingManualCheck = false
         // Dismissal / temporary errors do not mean the available version disappeared.
         // An explicit skip or a successful no-update check clears it separately.
         refresh()
@@ -146,6 +149,7 @@ final class AppUpdates: NSObject, ObservableObject, SPUUpdaterDelegate, SPUStand
     func check() {
         guard canCheck else { return }
         notice = ""
+        beginManualPresentation()
         NSApp.activate(ignoringOtherApps: true)
         updater?.checkForUpdates()
     }

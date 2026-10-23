@@ -59,14 +59,14 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(L10n.text(model.keyAccessRequired ? "翻译需要重新授权" : "暂时无法读取 API Key"), systemImage: "key.fill")
                 .font(.system(size: 14, weight: .semibold))
-            LText(model.keyAccessRequired ? "API Key 仍保存在钥匙串中。更新或重装后，macOS 可能要求重新允许访问；无需重新填写 Key。本地英文朗读不受影响。" : "暂时无法读取钥匙串中的 API Key。请解锁登录钥匙串后重新检查；无需删除或重新填写 Key。")
+            LText(model.keyAccessRequired ? "API Key 仍保存在钥匙串中，无需重新填写。首次迁移旧版本的 Key 时可能需要允许访问；成功后会迁移到当前固定签名版本使用。本地朗读不受影响。" : "暂时无法读取钥匙串中的 API Key。请解锁登录钥匙串后重新检查；无需删除或重新填写 Key。")
                 .font(MuseLayout.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !model.keyAccessIssue.isEmpty {
                 LText(model.keyAccessIssue).font(MuseLayout.detail).foregroundStyle(.secondary)
             }
             Button(L10n.text(model.keyAccessRequired ? "允许访问 API Key" : "重新检查")) {
                 if model.keyAccessRequired {
-                    do { try model.authorizeAPIKeyAccess(); message = "钥匙串访问已授权，可以返回翻译。" }
+                    do { try model.authorizeAPIKeyAccess(); message = "API Key 已可用，设置已保留。" }
                     catch { message = error.localizedDescription }
                 } else { model.refreshAPIKeyAccess() }
             }.disabled(model.previewMode)
