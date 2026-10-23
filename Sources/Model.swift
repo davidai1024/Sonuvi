@@ -7,7 +7,34 @@ final class AppModel: ObservableObject {
     private var sourceIsLong = false
     private var sourceClassification: (kind: InputKind, direction: Direction) = (.sentence, .toChinese)
     @Published var source = "" {
-        didSet { if oldValue != source { sourceIsLong = source.count > 128; sourceClassification = (sourceIsLong ? .sentence : TextRules.kind(source), TextRules.direction(source)); sourceApp = nil; cancel(); stopSpeaking(); result = ""; word = nil; error = "" } }
+        didSet {
+            guard oldValue != source else { return }
+            classificationTask?.cancel()
+            if !editingSource { refreshSourceClassification() }
+            sourceApp = nil
+            if busy || task != nil || ocrBusy || readingTranslation { cancel() }
+            if speaking || readingStatus != nil { stopSpeaking() }
+            if !result.isEmpty { result = "" }
+            if word != nil { word = nil }
+            if !error.isEmpty { error = "" }
+        }
+    }
+    private var editingSource = false
+    private var classificationTask: Task<Void, Never>?
+    private func refreshSourceClassification() {
+        sourceIsLong = source.prefix(129).count > 128
+        sourceClassification = (sourceIsLong ? .sentence : TextRules.kind(source), TextRules.direction(source))
+    }
+    func editSource(_ text: String) {
+        guard source != text else { return }
+        editingSource = true; source = text; editingSource = false
+        classificationTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.objectWillChange.send()
+            self.refreshSourceClassification()
+            self.classificationTask = nil
+        }
     }
     @Published var result = ""
     @Published var word: WordResult?
@@ -211,6 +238,8 @@ final class AppModel: ObservableObject {
         }
         currentID = UUID(); task?.cancel(); task = nil; busy = false }
     func translate(readAfter: Bool = false, presentation: ReadingPresentation = .inline) {
+        classificationTask?.cancel(); classificationTask = nil
+        refreshSourceClassification()
         if previewMode { error = "此窗口仅用于界面预览。"; if readAfter { readingStatus = error }; return }
         cancel()
         if readAfter { readingPresentation = presentation; readingTranslation = true; readingStatus = "正在准备英文朗读…" }

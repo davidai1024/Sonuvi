@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import Vision
 import ScreenCaptureKit
+import ImageIO
 import ServiceManagement
 import Carbon
 
@@ -227,32 +228,41 @@ enum OCRService {
         guard CGPreflightScreenCaptureAccess() else {
             throw TranslateError.message("截图翻译需要屏幕录制权限，请在设置中授权后重试。")
         }
+        // Freeze before creating any key window: transient menus may close as
+        // soon as the selection panel receives focus or the first mouse click.
+        let screens = NSScreen.screens.map(\.frame)
+        guard let first = screens.first else { return nil }
+        let frame = screens.dropFirst().reduce(first) { $0.union($1) }
+        let displayRect = CaptureGeometry.displayRect(frame, primaryTop: first.maxY)
+        let image: CGImage
         if #available(macOS 15.2, *) {
-            let picker = ScreenSelection()
-            guard let rect = try await picker.select() else { return nil }
-            try Task.checkCancellation()
-            // Close the selection panels before requesting a single image.
-            // No PNG encode/write/decode, subprocess or Vision work while dragging.
-            await Task.yield()
-            let displayRect = CaptureGeometry.displayRect(rect, primaryTop: NSScreen.screens.first?.frame.maxY ?? 0)
-            let image = try await SCScreenshotManager.captureImage(in: displayRect)
-            try Task.checkCancellation()
-            onCaptured() // Show recognition state BEFORE Vision begins.
-            let text = try await recognize(.image(image))
-            try Task.checkCancellation()
-            guard !text.isEmpty else { throw TranslateError.message("没有识别到文字，请重新框选清晰的区域。") }
-            return text
+            image = try await SCScreenshotManager.captureImage(in: displayRect)
+        } else {
+            image = try await legacySnapshot(displayRect)
         }
-        return try await legacyCapture(onCaptured: onCaptured)
+        try Task.checkCancellation()
+        // A display change during capture invalidates the coordinate mapping.
+        guard NSScreen.screens.map(\.frame) == screens else { return nil }
+        let snapshot = FrozenCapture(frame: frame, image: image)
+        let picker = ScreenSelection()
+        guard let rect = try await picker.select(snapshot: snapshot),
+              let selection = snapshot.crop(rect) else { return nil }
+        try Task.checkCancellation()
+        onCaptured()
+        let text = try await recognize(.image(selection))
+        try Task.checkCancellation()
+        guard !text.isEmpty else { throw TranslateError.message("没有识别到文字，请重新框选清晰的区域。") }
+        return text
     }
     @MainActor
-    private static func legacyCapture(onCaptured: () -> Void) async throws -> String? {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("musetranslate-ocr-" + UUID().uuidString)
+    private static func legacySnapshot(_ rect: CGRect) async throws -> CGImage {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("sonuvi-ocr-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appendingPathComponent("selection.png")
+        let file = directory.appendingPathComponent("screen.png")
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-i", "-x", "-r", file.path]
+        // Noninteractive capture does not take focus or dismiss an open menu.
+        process.arguments = ["-x", "-r", "-R\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))", file.path]
         process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         let code: Int32 = try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
@@ -262,12 +272,11 @@ enum OCRService {
             }
         }, onCancel: { if process.isRunning { process.terminate() } })
         try Task.checkCancellation()
-        guard code == 0, FileManager.default.fileExists(atPath: file.path) else { return nil }
-        onCaptured()
-        let text = try await recognize(.file(file))
-        try Task.checkCancellation()
-        guard !text.isEmpty else { throw TranslateError.message("没有识别到文字，请重新框选清晰的区域。") }
-        return text
+        guard code == 0, let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw TranslateError.message("无法截取屏幕，请检查屏幕录制权限后重试。")
+        }
+        return image
     }
 }
 

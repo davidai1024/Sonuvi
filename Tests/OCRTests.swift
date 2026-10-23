@@ -35,6 +35,21 @@ func runOCRTest() {
 func runOCRPipelineTest() async {
     do {
         let image = try makeOCRFixture()
+        // Simulated Retina desktop with a negative origin and a screen above
+        // primary: pixel coordinates must flip exactly once and clip safely.
+        let frozen = FrozenCapture(frame: CGRect(x: -250, y: 100, width: 500, height: 150), image: image)
+        guard frozen.pixelRect(CGRect(x: -230, y: 200, width: 100, height: 40)) == CGRect(x: 40, y: 20, width: 200, height: 80),
+              frozen.crop(CGRect(x: 800, y: 800, width: 20, height: 20)) == nil,
+              frozen.crop(CGRect(x: -300, y: 100, width: 100, height: 150))?.width == 100 else {
+            throw TranslateError.message("Frozen screen coordinate mapping failed")
+        }
+        // Recognition must use saved pixels even after the live UI changes.
+        guard let saved = frozen.crop(frozen.frame) else { throw TranslateError.message("Missing frozen frame") }
+        let savedText = try await OCRService.recognize(.image(saved))
+        guard savedText.contains("Hello David"), savedText.contains("公司") else {
+            throw TranslateError.message("Frozen crop lost menu text or inverted image")
+        }
+        print("PASS: frozen frame crop preserves bilingual pixels, Retina scale and negative origins")
         let started = Date()
         let text = try await OCRService.recognize(.image(image))
         guard text.contains("Hello David"), text.contains("公司"), text.contains("练习") else {

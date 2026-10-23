@@ -132,7 +132,7 @@ struct TranslateView: View {
                 if !hasSource {
                     LText(model.ocrRecognizing ? "正在识别选区文字…" : "选中文字，或在这里输入…").font(.system(size: 13, weight: .regular)).foregroundStyle(.tertiary).padding(.top, 1).allowsHitTesting(false)
                 }
-                TranslationEditor(text: $model.source, height: $sourceHeight, focusRequest: focusRequest,
+                TranslationEditor(text: Binding(get: { model.source }, set: { model.editSource($0) }), height: $sourceHeight, focusRequest: focusRequest,
                     onSelection: { model.onLocalSelection?($0, $1, $2) })
                     .frame(height: sourceHeight)
                     .accessibilityLabel(L10n.text("原文"))
@@ -277,7 +277,7 @@ private struct TranslationHeight: PreferenceKey {
 
 // A native text view keeps standard editing/IME behavior without an always-visible
 // scrollbar or the extra insets added by SwiftUI's macOS TextEditor.
-private struct TranslationEditor: NSViewRepresentable {
+struct TranslationEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var height: CGFloat
     var focusRequest: Int
@@ -285,11 +285,37 @@ private struct TranslationEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var owner: TranslationEditor
         var lastFocus = 0
-        init(_ owner: TranslationEditor) { self.owner = owner }
+        var synchronizedText: String
+        private var pendingReplacement: String?
+        init(_ owner: TranslationEditor) { self.owner = owner; synchronizedText = owner.text }
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
-            owner.text = view.string
-            (view.enclosingScrollView as? ContentSizedTextScrollView)?.measureContent()
+            (view.enclosingScrollView as? ContentSizedTextScrollView)?.invalidateMeasurement()
+            commit(view)
+        }
+        func commit(_ view: NSTextView) {
+            guard !view.hasMarkedText(), (view as? TranslationTextView)?.isHandlingInput != true else { return }
+            if let replacement = pendingReplacement {
+                pendingReplacement = nil
+                replace(view, with: replacement)
+            } else if synchronizedText != view.string {
+                synchronizedText = view.string
+                owner.text = view.string
+            }
+        }
+        func synchronize(_ view: NSTextView) {
+            let incoming = owner.text
+            guard incoming != synchronizedText else { return }
+            synchronizedText = incoming
+            // SwiftUI redraws must not terminate the input method's marked range.
+            if view.hasMarkedText() { pendingReplacement = incoming; return }
+            replace(view, with: incoming)
+        }
+        private func replace(_ view: NSTextView, with text: String) {
+            guard view.string != text else { return }
+            view.string = text
+            view.undoManager?.removeAllActions()
+            (view.enclosingScrollView as? ContentSizedTextScrollView)?.invalidateMeasurement()
         }
     }
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -305,6 +331,8 @@ private struct TranslationEditor: NSViewRepresentable {
         editor.onSelectionEnded = { [weak coordinator = context.coordinator] point, clicks, shift in
             coordinator?.owner.onSelection(point, clicks, shift)
         }
+        editor.onCompositionEnded = { [weak coordinator = context.coordinator] view in coordinator?.commit(view) }
+        editor.string = text
         editor.isEditable = true; editor.isSelectable = true
         editor.isRichText = false; editor.allowsUndo = true; editor.drawsBackground = false
         editor.font = .systemFont(ofSize: 15); editor.textColor = .labelColor; editor.insertionPointColor = .labelColor
@@ -323,7 +351,7 @@ private struct TranslationEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.owner = self
         guard let editor = scroll.documentView as? NSTextView else { return }
-        if editor.string != text { editor.string = text }
+        context.coordinator.synchronize(editor)
         (scroll as? ContentSizedTextScrollView)?.scheduleMeasurement()
         if context.coordinator.lastFocus != focusRequest {
             context.coordinator.lastFocus = focusRequest
@@ -341,14 +369,14 @@ enum TextEditingCommands {
         let key = event.charactersIgnoringModifiers?.lowercased()
         if flags == [.command, .shift] {
             guard key == "z", editor.isEditable else { return false }
-            editor.undoManager?.redo(); return true
+            editor.undoManager?.redo(); editor.didChangeText(); return true
         }
         switch key {
         case "c": editor.copy(nil)
         case "a": editor.selectAll(nil)
         case "v" where editor.isEditable: editor.pasteAsPlainText(nil)
         case "x" where editor.isEditable: editor.cut(nil)
-        case "z" where editor.isEditable: editor.undoManager?.undo()
+        case "z" where editor.isEditable: editor.undoManager?.undo(); editor.didChangeText()
         default: return false
         }
         return true
@@ -357,6 +385,24 @@ enum TextEditingCommands {
 
 final class TranslationTextView: NSTextView {
     var onSelectionEnded: ((NSPoint, Int, Bool) -> Void)?
+    var onCompositionEnded: ((NSTextView) -> Void)?
+    private var inputDepth = 0
+    var isHandlingInput: Bool { inputDepth > 0 }
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        inputDepth += 1
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        inputDepth -= 1
+    }
+    override func unmarkText() {
+        inputDepth += 1; super.unmarkText(); inputDepth -= 1
+        if !isHandlingInput { onCompositionEnded?(self) }
+    }
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        inputDepth += 1
+        super.insertText(insertString, replacementRange: replacementRange)
+        inputDepth -= 1
+        if !isHandlingInput { onCompositionEnded?(self) }
+    }
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
         // NSTextView can consume mouse-up inside its own tracking loop.
@@ -375,19 +421,25 @@ final class ContentSizedTextScrollView: NSScrollView {
     static let maximumHeight: CGFloat = 180
     var onHeightChanged: ((CGFloat) -> Void)?
     private var measurementScheduled = false
+    private var contentDirty = true
+    private var measuredWidth: CGFloat = -1
+    private(set) var measurementCount = 0
+    func invalidateMeasurement() { contentDirty = true; scheduleMeasurement() }
     override func layout() { super.layout(); TranslationScrollStyle.apply(to: self); scheduleMeasurement() }
     func scheduleMeasurement() {
         guard !measurementScheduled else { return }
         measurementScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.measurementScheduled = false; self.measureContent()
+            self.measurementScheduled = false
+            if self.contentDirty || abs(self.measuredWidth - self.contentSize.width) > 0.5 { self.measureContent() }
         }
     }
     func measureContent() {
         guard let editor = documentView as? NSTextView, let container = editor.textContainer,
               let manager = editor.layoutManager, contentSize.width > 1 else { return }
         let width = contentSize.width
+        contentDirty = false; measuredWidth = width; measurementCount += 1
         if abs(editor.frame.width - width) > 0.5 { editor.setFrameSize(NSSize(width: width, height: editor.frame.height)) }
         if abs(container.containerSize.width - width) > 0.5 {
             container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
