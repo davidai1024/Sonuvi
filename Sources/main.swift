@@ -829,6 +829,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.orderOut(nil); settings?.orderOut(nil)
         model.ocrBusy = true
         ocrID = UUID(); let id = ocrID
+        OCRService.beginSnapshot { [weak self] result in
+            guard let self, self.ocrID == id else { return }
+            MenuTrackingCapture.finish()
+            self.finishOCRSnapshot(result, id: id, origin: origin)
+        }
+    }
+    private func finishOCRSnapshot(_ snapshot: Result<FrozenCapture, Error>, id: UUID, origin: String?) {
         ocrTask = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -838,7 +845,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
             do {
-                let text = try await OCRService.capture {
+                let text = try await OCRService.capture(snapshot: snapshot.get()) {
                     guard self.ocrID == id else { return }
                     // Reset the old result without invoking model.cancel(), which
                     // would cancel this capture through the source didSet.
@@ -1060,6 +1067,7 @@ else if CommandLine.arguments.contains("--selection-compatibility-test") { MainA
 else if CommandLine.arguments.contains("--selection-copy-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionCopyTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--selection-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runSelectionTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--editor-test") { MainActor.assumeIsolated { runEditorTests() } }
+else if CommandLine.arguments.contains("--menu-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; RunLoop.main.perform { MainActor.assumeIsolated { runMenuCaptureTest() } }; app.run() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }

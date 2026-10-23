@@ -135,3 +135,27 @@ private final class SelectionView: NSView {
     override func rightMouseDown(with event: NSEvent) { cancelled?() }
     override func keyDown(with event: NSEvent) { if event.keyCode == 53 { cancelled?() } }
 }
+
+// App-owned NSMenus run a nested tracking loop. Keep capture completion in
+// common modes, then end tracking so the selection overlay can receive input.
+@MainActor
+enum MenuTrackingCapture {
+    private static var observers: [NSObjectProtocol] = []
+    private static var menus: [NSMenu] = []
+    static var isTracking: Bool { !menus.isEmpty }
+    static func start() {
+        guard observers.isEmpty else { return }
+        for name in [NSMenu.didBeginTrackingNotification, NSMenu.didEndTrackingNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { note in
+                MainActor.assumeIsolated {
+                    guard let menu = note.object as? NSMenu else { return }
+                    if note.name == NSMenu.didBeginTrackingNotification { menus.append(menu) }
+                    else { menus.removeAll { $0 === menu } }
+                }
+            })
+        }
+    }
+    static func finish() {
+        for menu in menus.reversed() { menu.cancelTrackingWithoutAnimation() }
+    }
+}

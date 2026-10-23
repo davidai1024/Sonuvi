@@ -250,14 +250,66 @@ final class GlobalShortcuts {
     var onRead: (() -> Void)?
     var onOCR: (() -> Void)?
     private var current: [ShortcutSpec] = []
+    private var screenshotTap: CFMachPort?
+    private var screenshotSource: CFRunLoopSource?
+    private var suspended = false
+    private var lastScreenshotEvent: TimeInterval = -1
+    private func installScreenshotTap() {
+        guard screenshotTap == nil, AXIsProcessTrusted() else { return }
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+            options: .defaultTap, eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
+            callback: { _, type, event, context in
+                guard let context else { return Unmanaged.passUnretained(event) }
+                return MainActor.assumeIsolated {
+                    let owner = Unmanaged<GlobalShortcuts>.fromOpaque(context).takeUnretainedValue()
+                    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                        if let tap = owner.screenshotTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                        return Unmanaged.passUnretained(event)
+                    }
+                    guard !owner.suspended, owner.current.count == 3,
+                          GlobalShortcuts.matchesScreenshot(event, spec: owner.current[2]) else {
+                        return Unmanaged.passUnretained(event)
+                    }
+                    if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                        owner.lastScreenshotEvent = ProcessInfo.processInfo.systemUptime
+                        // Invoke synchronously in common run-loop modes. Dispatching
+                        // to the main queue can wait until an NSMenu closes.
+                        owner.onOCR?()
+                    }
+                    return nil // Consume only the configured screenshot chord.
+                }
+            }, userInfo: context) else { return }
+        screenshotTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        screenshotSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    }
+    static func matchesScreenshot(_ event: CGEvent, spec: ShortcutSpec) -> Bool {
+        let mask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
+        var flags: CGEventFlags = []
+        for (carbon, flag) in [(cmdKey, CGEventFlags.maskCommand), (controlKey, .maskControl), (optionKey, .maskAlternate), (shiftKey, .maskShift)] {
+            if spec.modifiers & UInt32(carbon) != 0 { flags.insert(flag) }
+        }
+        return event.getIntegerValueField(.keyboardEventKeycode) == Int64(spec.keyCode)
+            && event.flags.intersection(mask) == flags
+    }
+    deinit {
+        if let screenshotSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), screenshotSource, .commonModes) }
+        if let screenshotTap { CFMachPortInvalidate(screenshotTap) }
+        for ref in refs { UnregisterEventHotKey(ref) }
+        if let handler { RemoveEventHandler(handler) }
+    }
     var installed: [ShortcutSpec] { current }
-    func suspend() { for ref in refs { UnregisterEventHotKey(ref) }; refs.removeAll() }
+    func suspend() { suspended = true; for ref in refs { UnregisterEventHotKey(ref) }; refs.removeAll() }
     func resume() -> Bool {
+        suspended = false; installScreenshotTap()
         guard refs.isEmpty else { return refs.count == 3 }
         guard !current.isEmpty else { return false }
         return register(current)
     }
     func install(_ specs: [ShortcutSpec] = [.translate, .read, .ocr]) -> Bool {
+        suspended = false; MenuTrackingCapture.start(); installScreenshotTap()
         if handler != nil { return configure(specs) }
         var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let ptr = Unmanaged.passUnretained(self).toOpaque()
@@ -268,6 +320,7 @@ final class GlobalShortcuts {
                   identifier.signature == 0x4D555345, (1...3).contains(identifier.id) else { return OSStatus(eventNotHandledErr) }
             let instance = Unmanaged<GlobalShortcuts>.fromOpaque(context).takeUnretainedValue()
             let id = identifier.id
+            if id == 3, GetEventTime(event) <= instance.lastScreenshotEvent + 0.1 { return noErr }
             DispatchQueue.main.async { if id == 1 { instance.onTranslate?() } else if id == 2 { instance.onRead?() } else if id == 3 { instance.onOCR?() } }
             return noErr
         }, 1, &event, ptr, &handler)

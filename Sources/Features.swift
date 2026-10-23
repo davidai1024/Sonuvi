@@ -224,26 +224,45 @@ enum OCRService {
     static func recognize(_ url: URL) async throws -> String { try await recognize(.file(url)) }
 
     @MainActor
-    static func capture(onCaptured: () -> Void) async throws -> String? {
+    static func beginSnapshot(completion: @escaping (Result<FrozenCapture, Error>) -> Void) {
         guard CGPreflightScreenCaptureAccess() else {
-            throw TranslateError.message("截图翻译需要屏幕录制权限，请在设置中授权后重试。")
+            completion(.failure(TranslateError.message("截图翻译需要屏幕录制权限，请在设置中授权后重试。"))); return
         }
-        // Freeze before creating any key window: transient menus may close as
-        // soon as the selection panel receives focus or the first mouse click.
         let screens = NSScreen.screens.map(\.frame)
-        guard let first = screens.first else { return nil }
-        let frame = screens.dropFirst().reduce(first) { $0.union($1) }
-        let displayRect = CaptureGeometry.displayRect(frame, primaryTop: first.maxY)
-        let image: CGImage
-        if #available(macOS 15.2, *) {
-            image = try await SCScreenshotManager.captureImage(in: displayRect)
-        } else {
-            image = try await legacySnapshot(displayRect)
+        guard let first = screens.first else {
+            completion(.failure(TranslateError.message("没有可用的屏幕。"))); return
         }
+        let frame = screens.dropFirst().reduce(first) { $0.union($1) }
+        let rect = CaptureGeometry.displayRect(frame, primaryTop: first.maxY)
+        let deliver: (Result<CGImage, Error>) -> Void = { result in
+            // Completion must run while a menu is tracking, before creating any
+            // MainActor Task. Only dismiss our menus AFTER the pixels are saved.
+            CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+                MainActor.assumeIsolated {
+                    guard NSScreen.screens.map(\.frame) == screens else {
+                        completion(.failure(CancellationError())); return
+                    }
+                    completion(result.map { FrozenCapture(frame: frame, image: $0) })
+                }
+            }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
+        }
+        if #available(macOS 15.2, *) {
+            SCScreenshotManager.captureImage(in: rect) { image, error in
+                if let image { deliver(.success(image)) }
+                else { deliver(.failure(error ?? TranslateError.message("无法截取屏幕，请重试。"))) }
+            }
+        } else {
+            Task.detached {
+                do { deliver(.success(try await legacySnapshot(rect))) }
+                catch { deliver(.failure(error)) }
+            }
+        }
+    }
+
+    @MainActor
+    static func capture(snapshot: FrozenCapture, onCaptured: () -> Void) async throws -> String? {
         try Task.checkCancellation()
-        // A display change during capture invalidates the coordinate mapping.
-        guard NSScreen.screens.map(\.frame) == screens else { return nil }
-        let snapshot = FrozenCapture(frame: frame, image: image)
         let picker = ScreenSelection()
         guard let rect = try await picker.select(snapshot: snapshot),
               let selection = snapshot.crop(rect) else { return nil }
@@ -254,7 +273,6 @@ enum OCRService {
         guard !text.isEmpty else { throw TranslateError.message("没有识别到文字，请重新框选清晰的区域。") }
         return text
     }
-    @MainActor
     private static func legacySnapshot(_ rect: CGRect) async throws -> CGImage {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("sonuvi-ocr-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
