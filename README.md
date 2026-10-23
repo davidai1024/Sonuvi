@@ -24,6 +24,8 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.35
 [版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.35)
 <!-- sonuvi-download:end -->
 
+[官方网站](https://sonuvi.davidai1024.com/) · [使用教程](https://sonuvi.davidai1024.com/learn/) · [28 种音色试听](https://sonuvi.davidai1024.com/learn/voices/) · [English guides](https://sonuvi.davidai1024.com/en/learn/)
+
 [下载与安装](#下载与安装) · [界面预览](#界面预览) · [功能](#先听再理解) · [开始使用](#开始使用) · [快捷键](#常用快捷键) · [更新记录](CHANGELOG.md) · [源码构建](#从源码构建)
 
 </div>
