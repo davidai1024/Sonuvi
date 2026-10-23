@@ -24,7 +24,9 @@ func runSelectionCompatibilityTests() async {
     delegate.onboarding = OnboardingState(defaults: defaults)
     delegate.window = FloatingPanel(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
     let clipboard = NSPasteboard.general.changeCount
-    for id in ["com.tencent.xinWeChat", "com.openai.codex"] {
+    let testFlag = CommandLine.arguments.firstIndex(of: "--selection-compatibility-test")!
+    let requested = Array(CommandLine.arguments.dropFirst(testFlag + 1))
+    for id in requested.isEmpty ? ["com.tencent.xinWeChat", "com.openai.codex"] : requested {
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first else {
             check(false, "Required real application is running: \(id)"); return
         }
@@ -39,6 +41,11 @@ func runSelectionCompatibilityTests() async {
             windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 0)!
         delegate.onMouseUp(up)
         await delegate.mouseTask?.value
+        if delegate.bubble?.isVisible != true {
+            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
+            let probe = await SelectionReader.probeAccessibility(pid: app.processIdentifier, at: point)
+            print("DIAGNOSTIC: target=\(id) foreground=\(front) allowed=\(delegate.allowsSelectionLookup(pid: app.processIdentifier)) protected=\(probe == .protected) pending=\(delegate.selectionLookup.pendingPID ?? -1)")
+        }
         check(delegate.bubble?.isVisible == true, "Production gesture pipeline presents selection actions: \(id)")
         check(NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier && delegate.bubble?.isKeyWindow == false,
               "Selection menu keeps target focus: \(id)")

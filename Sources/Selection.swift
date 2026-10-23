@@ -51,12 +51,16 @@ enum SelectionReader {
             }
         } onCancel: { ticket.cancel() }
     }
+    private static var profileCache: [pid_t: (url: URL?, launched: Date?, profile: SelectionAccessibilityProfile)] = [:]
     static func accessibilityProfile(pid: pid_t) -> SelectionAccessibilityProfile {
         let app = NSRunningApplication(processIdentifier: pid)
-        let electron = app?.bundleURL.map {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
-        } ?? false
-        return .resolve(bundleID: app?.bundleIdentifier, electron: electron)
+        guard let app else { profileCache.removeValue(forKey: pid); return .standard }
+        if let cached = profileCache[pid], cached.url == app.bundleURL, cached.launched == app.launchDate { return cached.profile }
+        let electron = SelectionAccessibilityProfile.containsElectron(at: app.bundleURL)
+        let profile = SelectionAccessibilityProfile.resolve(bundleID: app.bundleIdentifier, electron: electron)
+        if profileCache.count >= 64 { profileCache.removeAll() }
+        profileCache[pid] = (app.bundleURL, app.launchDate, profile)
+        return profile
     }
     static func prepareAccessibility(pid: pid_t) {
         guard trusted, pid != ProcessInfo.processInfo.processIdentifier else { return }

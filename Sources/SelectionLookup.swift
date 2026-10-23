@@ -66,7 +66,9 @@ enum SelectionProbe: Equatable {
 enum SelectionCompatibility {
     static func offersDeferredCapture(bundleID: String?, copyEnabled: Bool) -> Bool {
         guard copyEnabled, let bundleID else { return false }
-        return ["com.tencent.xinWeChat", "com.tencent.WeChat", "com.openai.chat", "com.openai.codex"].contains(bundleID)
+        return ["com.tencent.xinWeChat", "com.tencent.WeChat", "com.openai.chat", "com.openai.codex",
+                "com.tencent.qq", "com.bytedance.macos.feishu", "com.kingsoft.xiezuo",
+                "com.kingsoft.wpsoffice.mac", "com.bot.neotix.doubao", "com.alibaba.tongyi"].contains(bundleID)
     }
 }
 
@@ -145,9 +147,23 @@ enum SelectionLookup {
 
 enum SelectionAccessibilityProfile: Equatable {
     case standard, electron, chromium
+    static func containsElectron(at bundleURL: URL?) -> Bool {
+        guard let bundleURL else { return false }
+        let frameworks = bundleURL.appendingPathComponent("Contents/Frameworks", isDirectory: true)
+        if FileManager.default.fileExists(atPath: frameworks.appendingPathComponent("Electron Framework.framework").path) { return true }
+        // QQ and other clients rename the framework, but retain Electron's
+        // bundle identifier. Read only immediate framework metadata.
+        let children = (try? FileManager.default.contentsOfDirectory(at: frameworks,
+            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return children.filter { $0.pathExtension == "framework" }.prefix(64).contains { framework in
+            guard let data = try? Data(contentsOf: framework.appendingPathComponent("Resources/Info.plist")),
+                  let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return false }
+            return info["CFBundleIdentifier"] as? String == "com.github.Electron.framework"
+        }
+    }
     static func resolve(bundleID: String?, electron: Bool) -> Self {
         if electron { return .electron }
-        let browsers: Set<String> = ["com.openai.codex", "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary", "org.chromium.Chromium", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.brave.Browser", "com.brave.Browser.beta", "com.brave.Browser.nightly", "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera"]
+        let browsers: Set<String> = ["com.openai.codex", "com.bytedance.macos.feishu", "com.alibaba.tongyi", "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary", "org.chromium.Chromium", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.brave.Browser", "com.brave.Browser.beta", "com.brave.Browser.nightly", "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera"]
         return bundleID.map { browsers.contains($0) } == true ? .chromium : .standard
     }
     var activationAttribute: String? {

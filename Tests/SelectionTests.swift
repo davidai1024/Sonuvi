@@ -112,7 +112,20 @@ func runSelectionTests() async {
     check(nodeReads == 8, "Browser probing never expands into an unbounded tree scan")
     check(SelectionAccessibilityProfile.resolve(bundleID: "com.openai.codex", electron: false) == .chromium, "ChatGPT Chromium shell receives activation and its full warmup window")
     check(SelectionAccessibilityProfile.resolve(bundleID: "com.openai.codex", electron: true) == .electron, "Electron variants retain the documented Electron activation")
-    for id in ["com.tencent.xinWeChat", "com.openai.chat", "com.openai.codex"] {
+    for id in ["com.bytedance.macos.feishu", "com.alibaba.tongyi"] {
+        check(SelectionAccessibilityProfile.resolve(bundleID: id, electron: false) == .chromium, "Known embedded Chromium receives its activation: \(id)")
+    }
+    let frameworkFixture = FileManager.default.temporaryDirectory.appendingPathComponent("SonuviFrameworkTest-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: frameworkFixture) }
+    let metadata = frameworkFixture.appendingPathComponent("Contents/Frameworks/QQNT.framework/Resources/Info.plist")
+    try! FileManager.default.createDirectory(at: metadata.deletingLastPathComponent(), withIntermediateDirectories: true)
+    check(!SelectionAccessibilityProfile.containsElectron(at: frameworkFixture), "A renamed framework without Electron metadata is not misclassified")
+    try! PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "com.github.Electron.framework"], format: .xml, options: 0).write(to: metadata)
+    check(SelectionAccessibilityProfile.containsElectron(at: frameworkFixture), "Renamed QQNT framework is recognized by its Electron bundle identity")
+    try! PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "test.native.framework"], format: .xml, options: 0).write(to: metadata)
+    check(!SelectionAccessibilityProfile.containsElectron(at: frameworkFixture), "A native framework remains native regardless of its filename")
+    check(!SelectionAccessibilityProfile.containsElectron(at: nil), "Missing app bundle remains native")
+    for id in ["com.tencent.xinWeChat", "com.openai.chat", "com.openai.codex", "com.tencent.qq", "com.bytedance.macos.feishu", "com.kingsoft.xiezuo", "com.kingsoft.wpsoffice.mac", "com.bot.neotix.doubao", "com.alibaba.tongyi"] {
         check(SelectionCompatibility.offersDeferredCapture(bundleID: id, copyEnabled: true), "Opaque chat selection keeps explicit actions: \(id)")
         check(!SelectionCompatibility.offersDeferredCapture(bundleID: id, copyEnabled: false), "Copy opt-out also disables deferred actions: \(id)")
     }
