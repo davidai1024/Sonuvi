@@ -61,14 +61,13 @@ enum SelectionProbe: Equatable {
     var text: String? { if case .text(let value) = self { return value }; return nil }
 }
 
-// These clients may expose no selected text at all. Offer the existing actions
-// after a real selection gesture, and capture only after the user clicks one.
-enum SelectionCompatibility {
-    static func offersDeferredCapture(bundleID: String?, copyEnabled: Bool) -> Bool {
-        guard copyEnabled, let bundleID else { return false }
-        return ["com.tencent.xinWeChat", "com.tencent.WeChat", "com.openai.chat", "com.openai.codex",
-                "com.tencent.qq", "com.bytedance.macos.feishu", "com.kingsoft.xiezuo",
-                "com.kingsoft.wpsoffice.mac", "com.bot.neotix.doubao", "com.alibaba.tongyi"].contains(bundleID)
+// Pointer lookup cannot cross non-text chrome into a stale focused selection.
+enum SelectionPointerPolicy {
+    static func permits(role: String?) -> Bool {
+        guard let role else { return false }
+        return !["AXWindow", "AXApplication", "AXToolbar", "AXButton", "AXMenuButton",
+                 "AXPopUpButton", "AXScrollBar", "AXSlider", "AXSplitter", "AXImage",
+                 "AXMenu", "AXMenuItem", "AXCheckBox", "AXRadioButton"].contains(role)
     }
 }
 

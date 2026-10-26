@@ -935,7 +935,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let text, !Task.isCancelled else {
                 if !Task.isCancelled, self.selectionLookup.accepts(request, frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
                     self.selectionLog.debug("No accessible selection after bounded retries")
-                    if !protected { self.showDeferredSelectionBubble(pid: pid, point: point) }
+                    // No verified selection: never infer text from a drag gesture.
                 }
                 return
             }
@@ -984,7 +984,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }, isValid: { !protected && valid() }, delays: local ? [80_000_000] : gesture.action == .select ? SelectionReader.accessibilityProfile(pid: gesture.pid).retryDelays : [180_000_000, 240_000_000])
             guard !Task.isCancelled, valid() else { return }
             guard let text else {
-                if !local, !protected, gesture.action == .select { self.showDeferredSelectionBubble(pid: gesture.pid, point: fallback) }
+                // Unsupported controls remain available through explicit shortcuts.
                 return
             }
             if gesture.action == .inspect, self.lastSelection?.pid == gesture.pid, self.lastSelection?.text == text { return }
@@ -1036,13 +1036,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if TextRules.direction(text) == .toEnglish { self.model.translate(readAfter: true, presentation: presentation) }
             else { self.model.speak(text, presentation: presentation) }
         })
-    }
-    func showDeferredSelectionBubble(pid: pid_t, point: NSPoint) {
-        guard allowsSelectionLookup(pid: pid), SelectionCompatibility.offersDeferredCapture(
-            bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier, copyEnabled: model.clipboardFallback) else { return }
-        lastSelection = nil
-        presentSelectionBubble(point: point, translate: { [weak self] in self?.capture(read: false, expectedPID: pid, anchor: point) },
-            read: { [weak self] in self?.capture(read: true, expectedPID: pid, anchor: point) })
     }
     func presentSelectionBubble(point: NSPoint, translate: @escaping () -> Void, read: @escaping () -> Void) {
         if bubble == nil {

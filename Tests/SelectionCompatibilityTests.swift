@@ -41,25 +41,17 @@ func runSelectionCompatibilityTests() async {
             windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 0)!
         delegate.onMouseUp(up)
         await delegate.mouseTask?.value
-        if delegate.bubble?.isVisible != true {
-            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
-            let probe = await SelectionReader.probeAccessibility(pid: app.processIdentifier, at: point)
-            print("DIAGNOSTIC: target=\(id) foreground=\(front) allowed=\(delegate.allowsSelectionLookup(pid: app.processIdentifier)) protected=\(probe == .protected) pending=\(delegate.selectionLookup.pendingPID ?? -1)")
+        let probe = await SelectionReader.probeAccessibility(pid: app.processIdentifier, at: point)
+        if probe.text == nil {
+            check(delegate.bubble?.isVisible != true, "Unverified drag never presents speculative actions: \(id)")
         }
-        check(delegate.bubble?.isVisible == true, "Production gesture pipeline presents selection actions: \(id)")
-        check(NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier && delegate.bubble?.isKeyWindow == false,
-              "Selection menu keeps target focus: \(id)")
-        check(NSPasteboard.general.changeCount == clipboard, "Showing selection menu performs no copy: \(id)")
+        check(NSPasteboard.general.changeCount == clipboard, "Automatic lookup performs no copy: \(id)")
         delegate.dismissSelectionBubble()
-        delegate.model.clipboardFallback = false
-        delegate.showDeferredSelectionBubble(pid: app.processIdentifier, point: point)
-        check(delegate.bubble?.isVisible != true, "Copy opt-out blocks the deferred menu: \(id)")
-        delegate.model.clipboardFallback = true; delegate.model.excludedApps = [id]
-        delegate.showDeferredSelectionBubble(pid: app.processIdentifier, point: point)
-        check(delegate.bubble?.isVisible != true, "App exclusion blocks the deferred menu: \(id)")
         delegate.model.excludedApps = []; delegate.model.mouseLookup = false
-        delegate.showDeferredSelectionBubble(pid: app.processIdentifier, point: point)
-        check(delegate.bubble?.isVisible != true, "Global selection switch blocks the deferred menu: \(id)")
+        delegate.selectionLookup.begin(at: NSPoint(x: 270, y: 350))
+        delegate.onMouseUp(up)
+        await delegate.mouseTask?.value
+        check(delegate.bubble?.isVisible != true, "Global selection switch blocks lookup: \(id)")
         delegate.model.mouseLookup = true
         delegate.capture(read: false, expectedPID: -1, anchor: point)
         check(delegate.captureTask == nil, "A stale target cannot start capture: \(id)")

@@ -125,12 +125,13 @@ func runSelectionTests() async {
     try! PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "test.native.framework"], format: .xml, options: 0).write(to: metadata)
     check(!SelectionAccessibilityProfile.containsElectron(at: frameworkFixture), "A native framework remains native regardless of its filename")
     check(!SelectionAccessibilityProfile.containsElectron(at: nil), "Missing app bundle remains native")
-    for id in ["com.tencent.xinWeChat", "com.openai.chat", "com.openai.codex", "com.tencent.qq", "com.bytedance.macos.feishu", "com.kingsoft.xiezuo", "com.kingsoft.wpsoffice.mac", "com.bot.neotix.doubao", "com.alibaba.tongyi"] {
-        check(SelectionCompatibility.offersDeferredCapture(bundleID: id, copyEnabled: true), "Opaque chat selection keeps explicit actions: \(id)")
-        check(!SelectionCompatibility.offersDeferredCapture(bundleID: id, copyEnabled: false), "Copy opt-out also disables deferred actions: \(id)")
+    for role in ["AXWindow", "AXApplication", "AXToolbar", "AXButton", "AXScrollBar", "AXSlider", "AXSplitter", "AXImage", "AXMenuItem"] {
+        check(!SelectionPointerPolicy.permits(role: role), "Non-text drag is rejected: \(role)")
     }
-    check(!SelectionCompatibility.offersDeferredCapture(bundleID: "com.google.Chrome", copyEnabled: true), "Chrome still requires an actual accessible selection")
-    check(!SelectionCompatibility.offersDeferredCapture(bundleID: "test.unknown", copyEnabled: true), "Unknown apps do not receive speculative menus")
+    for role in ["AXTextArea", "AXTextField", "AXStaticText", "AXWebArea", "AXGroup"] {
+        check(SelectionPointerPolicy.permits(role: role), "Text selection remains eligible: \(role)")
+    }
+    check(!SelectionPointerPolicy.permits(role: nil), "Unknown hit target cannot prove a selection")
     let secureProbe = SelectionNodeSearch.probe(hit: 1, focused: 4, parent: parent, read: { $0 == 1 ? .protected : .text("secret") })
     check(secureProbe == .protected && secureProbe.text == nil, "Protected field remains distinguishable from an unsupported selection")
     let deepNative = SelectionNodeSearch.probe(hit: 1, focused: nil, parent: { $0 + 1 }, read: { $0 == 7 ? .text("Nested web selection") : .empty })

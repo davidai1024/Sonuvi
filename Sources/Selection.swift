@@ -111,9 +111,18 @@ enum SelectionReader {
                 if AXUIElementGetPid(found, &hitPID) != .success || hitPID != pid { hit = nil }
             }
         }
-        return SelectionNodeSearch.probe(hit: hit, focused: focused, parent: {
-            element(attribute($0, kAXParentAttribute))
+        // Automatic pointer lookup stays on the hit control and its text ancestors.
+        // A focused editor elsewhere may retain a selection during window/control drags.
+        let pointerLookup = point != nil
+        if pointerLookup && hit == nil { return .empty }
+        func permits(_ node: AXUIElement) -> Bool {
+            !pointerLookup || SelectionPointerPolicy.permits(role: attribute(node, kAXRoleAttribute) as? String)
+        }
+        return SelectionNodeSearch.probe(hit: hit, focused: pointerLookup ? nil : focused, parent: {
+            guard permits($0) else { return nil }
+            return element(attribute($0, kAXParentAttribute))
         }, read: { node in
+            guard permits(node) else { return .empty }
             if attribute(node, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return .protected }
             if let text = SelectionText.usable(attribute(node, kAXSelectedTextAttribute) as? String) { return .text(text) }
             // Chromium/WebKit document selections can span several text nodes.
