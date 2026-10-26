@@ -66,6 +66,8 @@ python3 scripts/release.py publish
 
 路径也可相对于仓库根目录。没有自定义配置目录时，省略 `gh_config_dir`，沿用官方 CLI 的默认登录配置。此文件只放路径，不要填写密码或 Token。
 
+如果本机默认 macOS SDK 与 Swift 编译器版本不匹配，可在 `.release-local.json` 添加 `sdk_path`，指向已安装且与编译器匹配的 SDK 目录。`build.sh` 在未显式设置 `SDKROOT` 时自动读取该路径；独立运行打包或签名辅助程序前，也应将 `SDKROOT` 设置为该路径。此配置仅作用于当前发布环境，不修改系统默认开发工具。
+
 ## 发布过程及保护
 
 - **版本自动识别**：不硬编码版本、大小、校验值或 README 原始 SHA。

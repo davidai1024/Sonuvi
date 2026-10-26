@@ -1,6 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
+if [[ -z "${SDKROOT:-}" && -f "$PWD/.release-local.json" ]]; then
+  local_sdk="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sdk_path", ""))' "$PWD/.release-local.json")"
+  if [[ -n "$local_sdk" ]]; then
+    if [[ ! -d "$local_sdk" ]]; then
+      printf 'Configured macOS SDK is missing; update sdk_path in .release-local.json.\n' >&2
+      exit 1
+    fi
+    export SDKROOT="$local_sdk"
+  fi
+fi
 app_dir="${MUSE_BUILD_DIR:-$PWD/build}/Sonuvi.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$PWD/build/module-cache"
 signing_profile="${SONUVI_SIGNING_PROFILE:-}"
@@ -61,8 +71,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.36</string>
-<key>CFBundleVersion</key><string>49</string>
+<key>CFBundleShortVersionString</key><string>0.4.37</string>
+<key>CFBundleVersion</key><string>50</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>
