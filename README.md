@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.35-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.36-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载翻译版 · 17.0 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.35/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.35/Sonuvi-Mac-Offline.dmg)**
+**[下载翻译版 · 17.0 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.36/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.36/Sonuvi-Mac-Offline.dmg)**
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.35
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.36
 
 两个版本功能相同。轻量版未内置朗读模型，可随时在「设置 → 模型」免费下载约 505 MB 的本地语音资源；完整朗读版已内置模型、运行环境和 28 个英文音色，无需另行下载。模型准备好后，英文朗读免费且可离线使用。已有模型会保留，可单独更新。
 
-[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.35)
+[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.36)
 <!-- sonuvi-download:end -->
 
 [官方网站](https://sonuvi.davidai1024.com/) · [使用教程](https://sonuvi.davidai1024.com/learn/) · [28 种音色试听](https://sonuvi.davidai1024.com/learn/voices/) · [English guides](https://sonuvi.davidai1024.com/en/learn/)
