@@ -128,6 +128,23 @@ struct TranslateView: View {
 
     private var sourceCard: some View {
         VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 0) {
+                if hasSource {
+                    HStack(spacing: 3) {
+                        LText("识别为").foregroundStyle(.secondary)
+                        LText(sourceLanguage).foregroundStyle(.blue)
+                    }.font(.system(size: 11)).padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.primary.opacity(0.045), in: Capsule())
+                }
+                Spacer(minLength: 4)
+                tool(model.speaking ? "stop.fill" : "speaker.wave.2", model.speaking ? "停止朗读" : (model.direction == .toChinese ? "朗读原文" : "本地朗读支持英文")) { model.speak(model.source) }
+                    .disabled(!model.speaking && (!hasSource || model.direction != .toChinese))
+                tool("doc.on.doc", "复制原文") { model.copy(model.source) }.disabled(!hasSource)
+                Button(L10n.text(model.busy || model.ocrRecognizing ? "取消" : "翻译")) { model.busy || model.ocrRecognizing ? model.cancel() : model.translate() }
+                    .font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 28)
+                    .buttonStyle(MuseHoverStyle(radius: 6)).foregroundStyle(.blue)
+                    .disabled(!hasSource && !model.busy && !model.ocrRecognizing).keyboardShortcut(.return, modifiers: .command)
+            }.padding(.trailing, -4)
             ZStack(alignment: .topLeading) {
                 if !hasSource {
                     LText(model.ocrRecognizing ? "正在识别选区文字…" : "选中文字，或在这里输入…").font(.system(size: 13, weight: .regular)).foregroundStyle(.tertiary).padding(.top, 1).allowsHitTesting(false)
@@ -137,23 +154,6 @@ struct TranslateView: View {
                     .frame(height: sourceHeight)
                     .accessibilityLabel(L10n.text("原文"))
             }.font(.system(size: 15)).lineSpacing(4)
-            HStack(spacing: 0) {
-                tool(model.speaking ? "stop.fill" : "speaker.wave.2", model.speaking ? "停止朗读" : (model.direction == .toChinese ? "朗读原文" : "本地朗读支持英文")) { model.speak(model.source) }
-                    .disabled(!model.speaking && (!hasSource || model.direction != .toChinese))
-                tool("doc.on.doc", "复制原文") { model.copy(model.source) }.disabled(!hasSource)
-                if hasSource {
-                    HStack(spacing: 3) {
-                        LText("识别为").foregroundStyle(.secondary)
-                        LText(sourceLanguage).foregroundStyle(.blue)
-                    }.font(.system(size: 11)).padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.primary.opacity(0.045), in: Capsule()).padding(.leading, 6)
-                }
-                Spacer(minLength: 4)
-                Button(L10n.text(model.busy || model.ocrRecognizing ? "取消" : "翻译")) { model.busy || model.ocrRecognizing ? model.cancel() : model.translate() }
-                    .font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 28)
-                    .buttonStyle(MuseHoverStyle(radius: 6)).foregroundStyle(.blue)
-                    .disabled(!hasSource && !model.busy && !model.ocrRecognizing).keyboardShortcut(.return, modifiers: .command)
-            }.padding(.horizontal, -4)
         }.padding(10).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
     }
 
@@ -184,6 +184,13 @@ struct TranslateView: View {
                     .font(.system(size: 11, weight: .regular))
                 Spacer(minLength: 8)
                 if model.busy || model.ocrRecognizing { ProgressView().controlSize(.mini) }
+                if !translated.isEmpty {
+                    HStack(spacing: 0) {
+                        tool(model.speaking ? "stop.fill" : "speaker.wave.2", model.speaking ? "停止朗读" : (model.direction == .toEnglish ? "朗读译文" : "本地朗读支持英文")) { model.speak(translated) }
+                            .disabled(!model.speaking && (model.busy || model.direction != .toEnglish))
+                        tool("doc.on.doc", "复制译文") { model.copy(translated) }.disabled(model.busy)
+                    }.padding(.trailing, -4)
+                }
             }.foregroundStyle(.secondary).padding(.horizontal, 10).frame(height: 28)
             VStack(alignment: .leading, spacing: 10) {
                 if !model.statusText.isEmpty {
@@ -221,15 +228,7 @@ struct TranslateView: View {
                         .font(.system(size: 11, weight: .regular)).foregroundStyle(.tertiary)
                         .frame(minHeight: 44, alignment: .topLeading)
                 }
-                if !translated.isEmpty {
-                    HStack(spacing: 0) {
-                        tool(model.speaking ? "stop.fill" : "speaker.wave.2", model.speaking ? "停止朗读" : (model.direction == .toEnglish ? "朗读译文" : "本地朗读支持英文")) { model.speak(translated) }
-                            .disabled(!model.speaking && (model.busy || model.direction != .toEnglish))
-                        tool("doc.on.doc", "复制译文") { model.copy(translated) }.disabled(model.busy)
-                        Spacer()
-                        if model.word != nil { LText("AI 释义").font(.system(size: 10)).foregroundStyle(.tertiary) }
-                    }.padding(.horizontal, -4)
-                }
+                if model.word != nil { LText("AI 释义").font(.system(size: 10)).foregroundStyle(.tertiary) }
             }.padding(.horizontal, 10).padding(.top, 5).padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }.background(cardColor, in: RoundedRectangle(cornerRadius: 9))
