@@ -461,14 +461,45 @@ struct PermissionMigrationNotice: View {
     }
 }
 
+enum SelectionBubbleGeometry {
+    static let outerRadius: CGFloat = 14
+    static let inset: CGFloat = 4
+    static let buttonWidth: CGFloat = 37
+    static let buttonHeight: CGFloat = 34
+    static let shadowInset: CGFloat = 8
+    static let contentSize = NSSize(width: buttonWidth * 2 + 1 + inset * 2,
+                                    height: buttonHeight + inset * 2)
+    static let panelSize = NSSize(width: contentSize.width + shadowInset * 2,
+                                  height: contentSize.height + shadowInset * 2)
+}
+
 struct SelectionBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let translate: () -> Void
     let read: () -> Void
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: translate) { LText("译").font(.system(size: 14, weight: .semibold)).frame(width: 37, height: 34) }.help(L10n.text("中英互译"))
+            Button(action: translate) { LText("译").font(.system(size: 14, weight: .semibold)).frame(width: SelectionBubbleGeometry.buttonWidth, height: SelectionBubbleGeometry.buttonHeight) }.help(L10n.text("中英互译"))
             Rectangle().fill(.primary.opacity(0.12)).frame(width: 1, height: 14)
-            Button(action: read) { Image(systemName: "speaker.wave.2.fill").font(.system(size: 12)).frame(width: 37, height: 34) }.help(L10n.text("朗读英文"))
-        }.buttonStyle(MuseHoverStyle(radius: 10)).padding(4).museGlass(14, interactive: true)
+            Button(action: read) { Image(systemName: "speaker.wave.2.fill").font(.system(size: 12)).frame(width: SelectionBubbleGeometry.buttonWidth, height: SelectionBubbleGeometry.buttonHeight) }.help(L10n.text("朗读英文"))
+        }
+        .buttonStyle(MuseHoverStyle(radius: SelectionBubbleGeometry.outerRadius - SelectionBubbleGeometry.inset))
+        .padding(SelectionBubbleGeometry.inset)
+        .frame(width: SelectionBubbleGeometry.contentSize.width, height: SelectionBubbleGeometry.contentSize.height)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: SelectionBubbleGeometry.outerRadius, style: .continuous)
+            if reduceTransparency { shape.fill(Color(nsColor: .windowBackgroundColor)) }
+            else { shape.fill(.regularMaterial) }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: SelectionBubbleGeometry.outerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SelectionBubbleGeometry.outerRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.10), lineWidth: 0.5)
+        }
+        // One shadow owner, with transparent room around all four corners.
+        // Native interactive glass plus an NSWindow shadow produced a dark rim.
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.28 : 0.12), radius: 3, x: 0, y: 2)
+        .padding(SelectionBubbleGeometry.shadowInset)
     }
 }

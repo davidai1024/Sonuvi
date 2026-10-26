@@ -16,6 +16,10 @@ final class FloatingPanel: NSPanel {
         return super.performKeyEquivalent(with: event)
     }
 }
+final class ClearBubbleHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool { false }
+}
+
 final class BubblePanel: NSPanel { override var canBecomeKey: Bool { false }; override var canBecomeMain: Bool { false } }
 
 @MainActor
@@ -1039,14 +1043,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     func presentSelectionBubble(point: NSPoint, translate: @escaping () -> Void, read: @escaping () -> Void) {
         if bubble == nil {
-            bubble = BubblePanel(contentRect: NSRect(x: 0, y: 0, width: 86, height: 42), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            bubble?.isOpaque = false; bubble?.backgroundColor = .clear; bubble?.hasShadow = true
+            bubble = BubblePanel(contentRect: NSRect(origin: .zero, size: SelectionBubbleGeometry.panelSize), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            bubble?.isOpaque = false; bubble?.backgroundColor = .clear; bubble?.hasShadow = false
             bubble?.level = .popUpMenu; bubble?.hidesOnDeactivate = false
             bubble?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
-        bubble?.contentView = NSHostingView(rootView: SelectionBubble(translate: translate, read: read))
+        let host = ClearBubbleHostingView(rootView: SelectionBubble(translate: translate, read: read))
+        if #available(macOS 14.0, *) { host.safeAreaRegions = [] }
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.clear.cgColor
+        bubble?.setContentSize(SelectionBubbleGeometry.panelSize)
+        bubble?.contentView = host
         let frame = NSScreen.screens.first(where: { $0.frame.contains(point) })?.visibleFrame ?? NSScreen.main!.visibleFrame
-        bubble?.setFrameOrigin(WindowGeometry.origin(near: point, size: NSSize(width: 86, height: 42), visible: frame)); bubble?.orderFrontRegardless()
+        bubble?.setFrameOrigin(WindowGeometry.origin(near: point, size: SelectionBubbleGeometry.panelSize, visible: frame)); bubble?.orderFrontRegardless()
     }
 }
 
