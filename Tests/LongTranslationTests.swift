@@ -119,6 +119,23 @@ func runLongTranslationTests() async {
     let roundTripEditor = TranslationTextView(); roundTripEditor.isEditable = true; roundTripEditor.isRichText = false
     roundTripEditor.pasteMarkdown(from: markdownBoard)
     check(roundTripEditor.string == "Heading\nbold link" && roundTripEditor.markdownBacking == backing, "Native repaste keeps plain display and Markdown backing separate")
+    let fixture = NSMutableAttributedString(string: "Word title\n1. Important item\n2. Next item", attributes: [.font: NSFont.systemFont(ofSize: 14)])
+    fixture.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 20), range: (fixture.string as NSString).range(of: "Word title"))
+    fixture.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: (fixture.string as NSString).range(of: "Important"))
+    let sourceMarkdown = MarkdownTranslation.importText(fixture.string, styled: fixture)
+    let translatedMarkdown = try! await TranslationWork(sourceMarkdown).run(send: { value, _ in
+        value.replacingOccurrences(of: "Word title", with: "译文标题").replacingOccurrences(of: "Important", with: "重要")
+    }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    for (markdown, expectedBold) in [(sourceMarkdown, "Important"), (translatedMarkdown, "重要")] {
+        let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
+        MarkdownClipboard.write(markdown, to: board)
+        let receiver = NSTextView(); receiver.isEditable = true; receiver.isRichText = true
+        let inserted = receiver.readSelection(from: board, type: .rtf)
+        let selected = (receiver.string as NSString).range(of: expectedBold)
+        check(inserted && selected.location != NSNotFound && (receiver.textStorage?.attribute(.font, at: selected.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
+              "Document-style source and translated copy paste with inline bold")
+        check(receiver.string.contains("1. ") && receiver.string.contains("2. "), "Copied document retains numbered list structure")
+    }
     var editorText = ""; var editorRich: NSAttributedString?
     let editorSpec = TranslationEditor(text: Binding(get: { editorText }, set: { editorText = $0 }),
         height: .constant(40), focusRequest: 0, onAttributedChange: { editorRich = $0 }, onSelection: { _,_,_ in })
