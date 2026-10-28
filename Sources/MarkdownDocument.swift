@@ -130,7 +130,7 @@ struct MarkdownDocument {
 
 enum MarkdownClipboard {
     static let backingType = NSPasteboard.PasteboardType("org.sonuvi.markdown")
-    static let markdownType = NSPasteboard.PasteboardType("public.markdown")
+    static let markdownType = NSPasteboard.PasteboardType("net.daringfireball.markdown")
     static func read(_ board: NSPasteboard) -> String? {
         guard let text = board.string(forType: .string) else { return nil }
         for type in [backingType, markdownType] {

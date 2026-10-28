@@ -107,6 +107,7 @@ func runLongTranslationTests() async {
     let backing = "# Heading\n**bold** [link](https://example.com)"
     MarkdownClipboard.write(backing, to: markdownBoard)
     check(markdownBoard.string(forType: .string) == "Heading\nbold link", "Copied visible text never contains hidden Markdown markers or destinations")
+    check(markdownBoard.string(forType: .init("net.daringfireball.markdown")) == backing, "Clipboard exports a standard Markdown representation alongside plain text")
     check(MarkdownClipboard.read(markdownBoard) == backing, "Clipboard round-trip preserves exact Markdown backing")
     let roundTripEditor = TranslationTextView(); roundTripEditor.isEditable = true; roundTripEditor.isRichText = false
     roundTripEditor.pasteMarkdown(from: markdownBoard)
