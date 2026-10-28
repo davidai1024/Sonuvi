@@ -1,0 +1,37 @@
+name: Verify default rich-text paste
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select SDK and test standard paste
+        shell: bash
+        run: |
+          XCODE="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -1)"
+          test -n "$XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          mkdir -p build/module-cache
+          cat > /tmp/PasteProbe.swift <<'SWIFT'
+          import AppKit
+          enum TranslateError: Error { case retryable(String), message(String), outputLimit }
+          @main struct Main {
+            @MainActor static func main() {
+              _ = NSApplication.shared
+              let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
+              let md = "# Heading\n\n1. **Bold** [link](https://example.com)"
+              MarkdownClipboard.write(md, to: board)
+              let receiver = NSTextView(); receiver.isEditable = true; receiver.isRichText = true
+              guard receiver.readSelection(from: board) else { fatalError("Default paste rejected clipboard") }
+              guard receiver.string.contains("Heading") && receiver.string.contains("Bold") && !receiver.string.contains("**") && !receiver.string.contains("https://") else { fatalError("Default paste selected plain Markdown") }
+              let range = (receiver.string as NSString).range(of: "Bold")
+              guard range.location != NSNotFound, let font = receiver.textStorage?.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont, font.fontDescriptor.symbolicTraits.contains(.bold) else { fatalError("Default paste lost bold") }
+              print("PASS: Default native paste selects RTF and keeps bold")
+            }
+          }
+          SWIFT
+          swiftc -swift-version 5 -target "$(uname -m)-apple-macosx13.0" -module-cache-path build/module-cache Sources/MarkdownDocument.swift Sources/MarkdownTranslation.swift Sources/MarkdownRichExport.swift Sources/RichText.swift Sources/TranslationWork.swift /tmp/PasteProbe.swift -framework AppKit -framework ApplicationServices -o build/paste-probe
+          build/paste-probe
