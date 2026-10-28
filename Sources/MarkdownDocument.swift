@@ -99,6 +99,7 @@ struct MarkdownDocument {
 
     func editingPlain(_ updated: String) -> String {
         guard updated != plain else { return markdown }
+        if updated.isEmpty { return "" }
         let old = Array(plain), new = Array(updated)
         var start = 0, tail = 0
         while start < min(old.count, new.count) && old[start] == new[start] { start += 1 }

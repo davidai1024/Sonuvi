@@ -17,6 +17,7 @@ func runMarkdownDocumentTests() {
     check(unicode.plain == "你好 👨‍👩‍👧‍👦 é © *", "Plain projection decodes entities and escapes without damaging Unicode")
     check(unicode.editingPlain(unicode.plain.replacingOccurrences(of: "你好", with: "您好")) == "**您好 👨‍👩‍👧‍👦 é** &copy; \\*", "UTF-16 edit mapping preserves emoji, combining marks and metadata")
     check(unicode.editingPlain(unicode.plain.replacingOccurrences(of: "©", with: "copy")) == "**你好 👨‍👩‍👧‍👦 é** copy \\*", "Entity editing replaces the complete source entity")
+    check(document.editingPlain("").isEmpty, "Clearing the visible editor also removes hidden document metadata")
     let code = MarkdownDocument("```\nlet a = 1\n```\n")
     check(code.editingPlain("let a = **2**\n") == "```\nlet a = **2**\n```\n", "Editing code content never inserts Markdown escape characters")
     let table = MarkdownDocument("| Name | Value |\n| --- | --- |\n| A | B |")
