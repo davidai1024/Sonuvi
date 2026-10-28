@@ -46,6 +46,14 @@ func runMarkdownDocumentTests() {
     board.clearContents(); board.setString(editorCopy, forType: .string)
     check(MarkdownClipboard.readMatchingSelection(board, text: editorAX) == editorCopy, "Editor accessibility artifacts do not discard copied Markdown lists")
     check(MarkdownClipboard.readMatchingSelection(board, text: editorAX.replacingOccurrences(of: "Second", with: "Different")) == nil, "Changed selection is rejected despite layout normalization")
+    let complexCopy = "# Checklist\n\n1. **Prepare**\n   - Visit [help](https://example.com/help)\n   - Check speed\n\n| Metric | Target |\n| --- | --- |\n| Time | 3 seconds |\n\n```json\n{\n  \"launch_enabled\": true,\n  \"retry_count\": 3\n}\n```\n\nReview after launch."
+    let complexAX = "Checklist\n\u{200b}\u{fffc}1. Prepare   - Visit help   - Check speed\nMetric\u{fffc}Target\u{fffc}Time\u{fffc}3 seconds\njson\u{200b}\u{fffc}{  \"launch_enabled\": true,  \"retry_count\": 3}\nReview after launch."
+    board.clearContents(); board.setString(complexCopy, forType: .string)
+    check(MarkdownClipboard.readMatchingSelection(board, text: complexAX) == complexCopy, "Flattened table and code accessibility text match the complete copied Markdown")
+    check(MarkdownClipboard.readMatchingSelection(board, text: complexAX.replacingOccurrences(of: "retry_count", with: "other_count")) == nil, "A changed code block cannot match the copied selection")
+    board.clearContents(); board.setString(ComplexSelectionFixture.source, forType: .string)
+    check(MarkdownClipboard.readMatchingSelection(board, text: ComplexSelectionFixture.flattened) == ComplexSelectionFixture.source, "Full user case matches despite Obsidian table and code widgets")
+    check(MarkdownClipboard.readMatchingSelection(board, text: ComplexSelectionFixture.flattened.replacingOccurrences(of: "retry_count", with: "wrong_count")) == nil, "Full user case rejects mismatched content")
     let html = "<html><body><h1>Heading</h1><p>Some <strong>bold</strong> and <a href=\"https://example.com\">link</a>.</p><ul><li>One</li><li>Two</li></ul></body></html>"
     board.clearContents(); let item = NSPasteboardItem()
     item.setString("Heading\nSome bold and link.\nOne\nTwo", forType: .string)

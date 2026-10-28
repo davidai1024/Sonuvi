@@ -140,6 +140,18 @@ enum MarkdownClipboard {
             .replacingOccurrences(of: #"(?<![\p{L}\p{N}])\d+[.)、](?=\s)"#, with: "", options: .regularExpression)
         return String(visible.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
     }
+    // Accessibility representations of editor widgets can flatten lists and
+    // tables and inject object markers into fenced code. In that case parsing
+    // the damaged representation as Markdown may hide everything after an
+    // apparent opening fence. Compare all textual content in order without
+    // interpreting block structure, while excluding link destinations that
+    // are invisible in rendered selections.
+    private static func rawSelectionFingerprint(_ text: String) -> String {
+        let withoutDestinations = text
+            .replacingOccurrences(of: #"\]\([^\n)]*\)"#, with: "]", options: .regularExpression)
+            .replacingOccurrences(of: #"(?<![\p{L}\p{N}])\d+[.)、](?=\s)"#, with: "", options: .regularExpression)
+        return String(withoutDestinations.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+    }
     static func readMatchingSelection(_ board: NSPasteboard, text: String) -> String? {
         guard let markdown = read(board) else { return nil }
         for candidate in [board.string(forType: .string), markdown, MarkdownDocument(markdown).plain].compactMap({ $0 }) {
@@ -147,6 +159,8 @@ enum MarkdownClipboard {
         }
         let selected = selectionFingerprint(text), copied = selectionFingerprint(markdown)
         if selected.count >= 8 && selected == copied { return markdown }
+        let rawSelected = rawSelectionFingerprint(text), rawCopied = rawSelectionFingerprint(markdown)
+        if rawSelected.count >= 8 && rawSelected == rawCopied { return markdown }
         return nil
     }
     static func read(_ board: NSPasteboard) -> String? {
