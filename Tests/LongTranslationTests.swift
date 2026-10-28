@@ -108,6 +108,11 @@ func runLongTranslationTests() async {
     MarkdownClipboard.write(backing, to: markdownBoard)
     check(markdownBoard.string(forType: .string) == backing, "Plain-text Markdown editors receive the complete Markdown source")
     check(markdownBoard.string(forType: .init("net.daringfireball.markdown")) == backing, "Clipboard exports a standard Markdown representation alongside plain text")
+    check(MarkdownClipboard.read(markdownBoard) == backing, "Clipboard round-trip preserves exact Markdown backing")
+    let roundTripEditor = TranslationTextView(); roundTripEditor.isEditable = true; roundTripEditor.isRichText = false
+    roundTripEditor.pasteMarkdown(from: markdownBoard)
+    check(roundTripEditor.string == "Heading\nbold link" && roundTripEditor.markdownBacking == backing, "Native repaste keeps plain display and Markdown backing separate")
+    MarkdownClipboard.writeRich(backing, to: markdownBoard)
     let exported = try! NSAttributedString(data: markdownBoard.data(forType: .rtf)!, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil)
     check(exported.string == "Heading\nbold link", "Document editors receive readable rich text without Markdown markers")
     let exportedBold = (exported.string as NSString).range(of: "bold")
@@ -115,10 +120,6 @@ func runLongTranslationTests() async {
     check((exported.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == 20, "Copied rich text preserves heading size")
     let exportedLink = (exported.string as NSString).range(of: "link")
     check((exported.attribute(.link, at: exportedLink.location, effectiveRange: nil) as? URL)?.absoluteString == "https://example.com", "Copied rich text retains link destination")
-    check(MarkdownClipboard.read(markdownBoard) == backing, "Clipboard round-trip preserves exact Markdown backing")
-    let roundTripEditor = TranslationTextView(); roundTripEditor.isEditable = true; roundTripEditor.isRichText = false
-    roundTripEditor.pasteMarkdown(from: markdownBoard)
-    check(roundTripEditor.string == "Heading\nbold link" && roundTripEditor.markdownBacking == backing, "Native repaste keeps plain display and Markdown backing separate")
     let fixture = NSMutableAttributedString(string: "Word title\n1. Important item\n2. Next item", attributes: [.font: NSFont.systemFont(ofSize: 14)])
     fixture.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 20), range: (fixture.string as NSString).range(of: "Word title"))
     fixture.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: (fixture.string as NSString).range(of: "Important"))
@@ -128,7 +129,7 @@ func runLongTranslationTests() async {
     }, onUpdate: { _ in }, onProgress: { _,_,_ in })
     for (markdown, expectedBold) in [(sourceMarkdown, "Important"), (translatedMarkdown, "重要")] {
         let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
-        MarkdownClipboard.write(markdown, to: board)
+        MarkdownClipboard.writeRich(markdown, to: board)
         let receiver = NSTextView(); receiver.isEditable = true; receiver.isRichText = true
         let inserted = receiver.readSelection(from: board, type: .rtf)
         let selected = (receiver.string as NSString).range(of: expectedBold)

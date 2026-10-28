@@ -131,11 +131,22 @@ struct MarkdownDocument {
 enum MarkdownClipboard {
     static let backingType = NSPasteboard.PasteboardType("org.sonuvi.markdown")
     static let markdownType = NSPasteboard.PasteboardType("net.daringfireball.markdown")
+    // Some editors expose visual layout artifacts through accessibility: list
+    // numbers, object replacement characters and soft line breaks differ from
+    // the Markdown placed on their pasteboard. Compare the complete visible
+    // content as well as the exact representations before accepting a copy.
+    private static func selectionFingerprint(_ text: String) -> String {
+        let visible = MarkdownDocument(text).plain
+            .replacingOccurrences(of: #"(?<![\p{L}\p{N}])\d+[.)、](?=\s)"#, with: "", options: .regularExpression)
+        return String(visible.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+    }
     static func readMatchingSelection(_ board: NSPasteboard, text: String) -> String? {
         guard let markdown = read(board) else { return nil }
         for candidate in [board.string(forType: .string), markdown, MarkdownDocument(markdown).plain].compactMap({ $0 }) {
             if RichText.aligned(NSAttributedString(string: candidate), to: text) != nil { return markdown }
         }
+        let selected = selectionFingerprint(text), copied = selectionFingerprint(markdown)
+        if selected.count >= 8 && selected == copied { return markdown }
         return nil
     }
     static func read(_ board: NSPasteboard) -> String? {
@@ -144,16 +155,28 @@ enum MarkdownClipboard {
             if let markdown = board.string(forType: type), markdown.utf8.count <= 16_000_000,
                markdown == text || MarkdownDocument(markdown).plain == text { return markdown }
         }
+        // An editor may also offer HTML, but its plain string is already the
+        // original Markdown and is the only lossless representation.
+        if text.range(of: #"(?m)^\s*(?:#{1,6} |```|~~~|> )|\*\*|\[[^\]]+\]\("#, options: .regularExpression) != nil { return text }
+        if let html = board.data(forType: .html), let markdown = HTMLClipboard.markdown(html) {
+            let copied = selectionFingerprint(markdown), plain = selectionFingerprint(text)
+            if !plain.isEmpty && plain == copied { return markdown }
+        }
         return MarkdownTranslation.importText(text, styled: RichText.fromPasteboard(board))
     }
     static func write(_ markdown: String, to board: NSPasteboard) {
         let item = NSPasteboardItem()
         item.setString(markdown, forType: .string)
+        item.setString(markdown, forType: backingType); item.setString(markdown, forType: markdownType)
+        board.clearContents(); board.writeObjects([item])
+    }
+    static func writeRich(_ markdown: String, to board: NSPasteboard) {
+        let item = NSPasteboardItem()
         let rich = MarkdownRichExport.render(markdown)
+        item.setString(rich.string, forType: .string)
         if let rtf = try? rich.data(from: NSRange(location: 0, length: rich.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]) {
             item.setData(rtf, forType: .rtf)
         }
-        item.setString(markdown, forType: backingType); item.setString(markdown, forType: markdownType)
         board.clearContents(); board.writeObjects([item])
     }
 }

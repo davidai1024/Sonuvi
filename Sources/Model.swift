@@ -371,6 +371,13 @@ final class AppModel: ObservableObject {
         let id = UUID(); toastID = id; toast = "已复制"
         Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if toastID == id { toast = "" } }
     }
+    func copyRich(_ value: String) {
+        guard !value.isEmpty else { return }
+        MarkdownClipboard.writeRich(value, to: .general)
+        usage.copied()
+        let id = UUID(); toastID = id; toast = "已复制"
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if toastID == id { toast = "" } }
+    }
     func stopSpeaking() {
         if readingTranslation { cancel() }
         playback.stop(); speaking = false; readingStatus = nil

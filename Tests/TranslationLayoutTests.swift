@@ -81,6 +81,7 @@ func runTranslationLayoutTests() async {
         let sourceWidth = plainSource.convert(plainSource.bounds, to: hosting).width
         let resultWidth = plainResult.convert(plainResult.bounds, to: hosting).width
         check(abs(sourceWidth - resultWidth) < 8 && resultWidth > 280, "Result text uses the same available width as the source editor")
+        check(plainResult.textContainer?.widthTracksTextView == true && abs((plainResult.textContainer?.containerSize.width ?? 0) - plainResult.bounds.width) < 8, "Result text container tracks the visible width")
     }
     check(plainResult?.markdownBacking == model.result && plainSource?.markdownBacking == model.source, "Both native views retain the original Markdown behind display")
     check(plainResult?.font?.pointSize == 15 && plainSource?.font?.pointSize == 15 && plainResult?.isRichText == false && plainSource?.isRichText == false,
