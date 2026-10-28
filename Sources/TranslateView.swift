@@ -29,7 +29,7 @@ struct TranslateView: View {
                             })
                         languageBar
                         resultCard
-                    }.padding(.horizontal, 12).padding(.bottom, 8)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
                         .background(TranslationScrollAppearance())
                         .background(GeometryReader { geometry in Color.clear.preference(key: TranslationHeight.self, value: geometry.size.height) })
                 }
@@ -140,6 +140,7 @@ struct TranslateView: View {
                 tool(model.speaking ? "stop.fill" : "speaker.wave.2", model.speaking ? "停止朗读" : (model.direction == .toChinese ? "朗读原文" : "本地朗读支持英文")) { model.speak(model.source) }
                     .disabled(!model.speaking && (!hasSource || model.direction != .toChinese))
                 tool("doc.on.doc", "复制原文") { model.copy(model.source) }.disabled(!hasSource)
+                    .contextMenu { Button(L10n.text("复制为富文本")) { model.copyRich(model.source) } }
                 Button(L10n.text(model.busy || model.ocrRecognizing ? "取消" : "翻译")) { model.busy || model.ocrRecognizing ? model.cancel() : model.translate() }
                     .font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 28)
                     .buttonStyle(MuseHoverStyle(radius: 6)).foregroundStyle(.blue)
@@ -156,7 +157,7 @@ struct TranslateView: View {
                     .frame(height: sourceHeight)
                     .accessibilityLabel(L10n.text("原文"))
             }.font(.system(size: 15)).lineSpacing(4)
-        }.padding(10).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
+        }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private var languageBar: some View {
@@ -191,6 +192,7 @@ struct TranslateView: View {
                         tool(model.speaking ? "stop.fill" : "speaker.wave.2", model.speaking ? "停止朗读" : (model.direction == .toEnglish ? "朗读译文" : "本地朗读支持英文")) { model.speak(translated) }
                             .disabled(!model.speaking && (model.busy || model.direction != .toEnglish))
                         tool("doc.on.doc", "复制译文") { model.copy(translated) }.disabled(model.busy)
+                            .contextMenu { Button(L10n.text("复制为富文本")) { model.copyRich(translated) } }
                     }.padding(.trailing, -4)
                 }
             }.foregroundStyle(.secondary).padding(.horizontal, 10).frame(height: 28)
@@ -233,7 +235,7 @@ struct TranslateView: View {
                 if model.word != nil { LText("AI 释义").font(.system(size: 10)).foregroundStyle(.tertiary) }
             }.padding(.horizontal, 10).padding(.top, 5).padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }.background(cardColor, in: RoundedRectangle(cornerRadius: 9))
+        }.frame(maxWidth: .infinity, alignment: .leading).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func dictionary(_ word: WordResult) -> some View {
@@ -625,7 +627,7 @@ struct PlainMarkdownResultView: NSViewRepresentable {
         view.drawsBackground = false; view.textContainerInset = .zero
         view.textContainer?.lineFragmentPadding = 0
         view.isHorizontallyResizable = false; view.isVerticallyResizable = true
-        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.widthTracksTextView = true
         return view
     }
     func updateNSView(_ view: NSTextView, context: Context) {
@@ -635,8 +637,14 @@ struct PlainMarkdownResultView: NSViewRepresentable {
         (view as? TranslationTextView)?.markdownBacking = markdown
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0, let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
-        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        guard let width = proposal.width, width > 0 else { return nil }
+        // SwiftUI asks for several hypothetical widths. Measuring in the live
+        // text container leaves the final display wrapped at a probe width.
+        let storage = NSTextStorage(attributedString: nsView.attributedString())
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        storage.addLayoutManager(layout); layout.addTextContainer(container)
         layout.ensureLayout(for: container)
         return CGSize(width: width, height: ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY)))
     }

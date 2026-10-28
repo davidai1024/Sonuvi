@@ -811,14 +811,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             guard !Task.isCancelled, self.captureID == id else { return }
             let styled: NSAttributedString?
+            var copiedMarkdown: String?
             if !read, localText == nil, let pid = originApplication?.processIdentifier {
-                let copied = self.model.clipboardFallback ? await SelectionReader.copiedAttributedSelection(pid: pid, matching: text) : nil
-                if let copied { styled = copied }
-                else { styled = await SelectionReader.attributedSelection(pid: pid, matching: text) }
+                copiedMarkdown = self.model.clipboardFallback ? await SelectionReader.copiedMarkdownSelection(pid: pid, matching: text) : nil
+                styled = copiedMarkdown == nil ? await SelectionReader.attributedSelection(pid: pid, matching: text) : nil
             } else { styled = nil }
             guard !Task.isCancelled, self.captureID == id,
                   localText != nil || NSWorkspace.shared.frontmostApplication?.processIdentifier == originApplication?.processIdentifier else { return }
-            self.model.setSource(text, app: sourceApp, attributed: styled)
+            self.model.setSource(copiedMarkdown ?? text, app: sourceApp, attributed: styled)
             if read {
                 self.bubble?.orderOut(nil); self.readingBar.anchor = point
                 if TextRules.direction(text) == .toChinese { self.model.speak(text, presentation: localText == nil ? .floating : .inline) }
@@ -900,13 +900,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureTask = Task { [weak self] in
             guard let self else { return }
             var styled: NSAttributedString?
+            var copiedMarkdown: String?
             if let pid {
-                if self.model.clipboardFallback { styled = await SelectionReader.copiedAttributedSelection(pid: pid, matching: text) }
-                if styled == nil { styled = await SelectionReader.attributedSelection(pid: pid, matching: text) }
+                if self.model.clipboardFallback { copiedMarkdown = await SelectionReader.copiedMarkdownSelection(pid: pid, matching: text) }
+                if copiedMarkdown == nil { styled = await SelectionReader.attributedSelection(pid: pid, matching: text) }
             }
             guard !Task.isCancelled, self.captureID == id,
                   pid == nil || NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
-            self.model.setSource(text, app: app, attributed: styled)
+            self.model.setSource(copiedMarkdown ?? text, app: app, attributed: styled)
             self.presentWindow(near: point); self.model.translate()
         }
     }

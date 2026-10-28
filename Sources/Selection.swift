@@ -69,7 +69,7 @@ enum SelectionReader {
     }
     // Explicit translation only: when the source app does not expose AX styles,
     // try its normal Copy command and restore the user's prior clipboard.
-    static func copiedAttributedSelection(pid: pid_t, matching text: String, pasteboard: NSPasteboard = .general) async -> NSAttributedString? {
+    static func copiedMarkdownSelection(pid: pid_t, matching text: String, pasteboard: NSPasteboard = .general) async -> String? {
         guard trusted, !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         let app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, 0.12)
         var focused: CFTypeRef?; var subrole: CFTypeRef?
@@ -98,7 +98,7 @@ enum SelectionReader {
         }
         guard pasteboard.changeCount != before else { return nil }
         let copied = pasteboard.changeCount
-        let value = RichText.fromPasteboard(pasteboard)
+        let value = MarkdownClipboard.readMatchingSelection(pasteboard, text: text)
         if pasteboard.changeCount == copied {
             pasteboard.clearContents()
             let items = saved.map { values -> NSPasteboardItem in
@@ -108,7 +108,7 @@ enum SelectionReader {
         }
         guard !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
               let value else { return nil }
-        return RichText.aligned(value, to: text)
+        return value
     }
     static func probeAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> SelectionProbe {
         guard trusted, !Task.isCancelled else { return .empty }
