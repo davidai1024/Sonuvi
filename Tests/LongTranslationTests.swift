@@ -95,6 +95,14 @@ func runLongTranslationTests() async {
     let wordData = try! wordStyle.data(from: NSRange(location: 0, length: wordStyle.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
     wordItem.setData(wordData, forType: .rtf); wordBoard.writeObjects([wordItem])
     check(RichText.fromPasteboard(wordBoard)?.string == "Title\nBold", "Clipboard import reconciles Word-style text and RTF representations")
+    let wordEditor = TranslationTextView(); wordEditor.isEditable = true; wordEditor.isRichText = false
+    wordEditor.textColor = .labelColor
+    wordEditor.pasteMarkdown(from: richBoard)
+    check(wordEditor.string == MarkdownTranslation.importText(richOutput, styled: pastedRich), "Native paste converts rich clipboard into editable Markdown")
+    check(wordEditor.string.contains("## Heading") && wordEditor.string.contains("**bold**"), "Native paste retains heading and emphasis as Markdown")
+    let importedModel = AppModel(); importedModel.previewMode = true
+    importedModel.setSource(richOutput, attributed: pastedRich)
+    check(importedModel.source == wordEditor.string && importedModel.sourceAttributed == nil, "Selection import and native paste produce identical Markdown without document colors")
     var editorText = ""; var editorRich: NSAttributedString?
     let editorSpec = TranslationEditor(text: Binding(get: { editorText }, set: { editorText = $0 }),
         height: .constant(40), focusRequest: 0, onAttributedChange: { editorRich = $0 }, onSelection: { _,_,_ in })

@@ -457,9 +457,10 @@ class ReadableRichTextView: NSTextView {
 }
 
 final class TranslationTextView: ReadableRichTextView {
-    override func paste(_ sender: Any?) {
-        guard isEditable, let plain = NSPasteboard.general.string(forType: .string) else { return }
-        let markdown = MarkdownTranslation.importText(plain, styled: RichText.fromPasteboard(.general))
+    override func paste(_ sender: Any?) { pasteMarkdown(from: .general) }
+    func pasteMarkdown(from board: NSPasteboard) {
+        guard isEditable, let plain = board.string(forType: .string) else { return }
+        let markdown = MarkdownTranslation.importText(plain, styled: RichText.fromPasteboard(board))
         insertText(markdown, replacementRange: selectedRange())
     }
 
