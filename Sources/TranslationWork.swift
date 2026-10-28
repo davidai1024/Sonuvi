@@ -3,7 +3,7 @@ import AppKit
 
 struct TranslationPart {
     let text: String
-    let separator: String
+    var separator: String
     var attributes: [NSAttributedString.Key: Any] = [:]
 
     // Split at every explicit line break; retain separators locally rather than
@@ -60,8 +60,8 @@ final class TranslationWork {
     }
     private let hasStyles: Bool
     init(_ text: String, attributed: NSAttributedString? = nil) {
-        leading = String(text.prefix(while: { $0.isWhitespace }))
-        parts = TranslationPart.split(String(text.dropFirst(leading.count)))
+        leading = attributed == nil ? "" : String(text.prefix(while: { $0.isWhitespace }))
+        parts = attributed == nil ? MarkdownTranslation.parts(String(text.dropFirst(leading.count))) : TranslationPart.split(String(text.dropFirst(leading.count)))
         hasStyles = attributed?.string == text && attributed?.length != 0
         if hasStyles, let attributed {
             var offset = (leading as NSString).length
@@ -145,7 +145,7 @@ final class TranslationWork {
                     for (field, value) in zip(fields, values) {
                         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                         let oneLine = trimmed.components(separatedBy: .newlines).joined(separator: " ")
-                        completed.append(field.0 + oneLine)
+                        completed.append(field.0 + (hasStyles ? oneLine : MarkdownTranslation.escapeTranslation(oneLine)))
                     }
                     onUpdate(output); onProgress(completed.count, parts.count, false)
                 } else if fields.count > 1 {

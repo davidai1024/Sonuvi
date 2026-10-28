@@ -32,5 +32,6 @@ jobs:
       - name: Test rich clipboard and translation layout
         shell: bash
         run: |
+          build/Sonuvi --markdown-test
           build/Sonuvi --long-translation-test
           build/Sonuvi --translation-layout-test

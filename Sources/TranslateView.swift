@@ -150,7 +150,7 @@ struct TranslateView: View {
                     LText(model.ocrRecognizing ? "正在识别选区文字…" : "选中文字，或在这里输入…").font(.system(size: 13, weight: .regular)).foregroundStyle(.tertiary).padding(.top, 1).allowsHitTesting(false)
                 }
                 TranslationEditor(text: Binding(get: { model.source }, set: { model.editSource($0) }), height: $sourceHeight, focusRequest: focusRequest,
-                    styledText: model.sourceAttributed, onAttributedChange: { value in model.sourceAttributed = value; model.invalidateTranslationWork() },
+                    styledText: nil, onAttributedChange: { _ in model.invalidateTranslationWork() },
                     onSelection: { model.onLocalSelection?($0, $1, $2) })
                     .frame(height: sourceHeight)
                     .accessibilityLabel(L10n.text("原文"))
@@ -217,7 +217,7 @@ struct TranslateView: View {
                     Group {
                         if let rich = model.resultAttributed, rich.string == model.result {
                             RichResultView(value: rich)
-                        } else { Text(model.result).font(.system(size: 15)).lineSpacing(5) }
+                        } else { MarkdownResultView(markdown: model.result) }
                     }.textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.error.isEmpty && model.ocrRecognizing {
@@ -279,7 +279,7 @@ struct TranslateView: View {
 struct RichResultView: NSViewRepresentable {
     let value: NSAttributedString
     func makeNSView(context: Context) -> NSTextView {
-        let view = NSTextView()
+        let view = ReadableRichTextView()
         view.isEditable = false; view.isSelectable = true; view.isRichText = true
         view.drawsBackground = false; view.textContainerInset = .zero
         view.textContainer?.lineFragmentPadding = 0
@@ -289,6 +289,7 @@ struct RichResultView: NSViewRepresentable {
     }
     func updateNSView(_ view: NSTextView, context: Context) {
         if let storage = view.textStorage, !storage.isEqual(to: value) { storage.setAttributedString(value) }
+        (view as? ReadableRichTextView)?.refreshDisplayColors()
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
         guard let width = proposal.width, width > 0, let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
@@ -372,7 +373,7 @@ struct TranslationEditor: NSViewRepresentable {
         editor.onCompositionEnded = { [weak coordinator = context.coordinator] view in coordinator?.commit(view) }
         editor.string = text
         editor.isEditable = true; editor.isSelectable = true
-        editor.isRichText = true; editor.importsGraphics = false; editor.allowsUndo = true; editor.drawsBackground = false
+        editor.isRichText = false; editor.importsGraphics = false; editor.allowsUndo = true; editor.drawsBackground = false
         editor.font = .systemFont(ofSize: 15); editor.textColor = .labelColor; editor.insertionPointColor = .labelColor
         editor.isVerticallyResizable = true; editor.isHorizontallyResizable = false
         editor.autoresizingMask = [.width]; editor.textContainerInset = .zero
@@ -391,6 +392,7 @@ struct TranslationEditor: NSViewRepresentable {
         context.coordinator.owner = self
         guard let editor = scroll.documentView as? NSTextView else { return }
         context.coordinator.synchronize(editor)
+        (editor as? ReadableRichTextView)?.refreshDisplayColors()
         (scroll as? ContentSizedTextScrollView)?.scheduleMeasurement()
         if context.coordinator.lastFocus != focusRequest {
             context.coordinator.lastFocus = focusRequest
@@ -422,7 +424,45 @@ enum TextEditingCommands {
     }
 }
 
-final class TranslationTextView: NSTextView {
+// Apply appearance-aware colors only to layout, keeping the document's actual
+// colors intact for translation and copying back into Word.
+class ReadableRichTextView: NSTextView {
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshDisplayColors()
+    }
+    override func didChangeText() {
+        super.didChangeText()
+        refreshDisplayColors()
+    }
+    func refreshDisplayColors() {
+        guard let storage = textStorage, let layout = layoutManager, storage.length > 0 else { return }
+        let range = NSRange(location: 0, length: storage.length)
+        layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        storage.enumerateAttributes(in: range) { attrs, span, _ in
+            guard attrs[.backgroundColor] == nil else { return }
+            guard let color = attrs[.foregroundColor] as? NSColor else {
+                layout.addTemporaryAttribute(.foregroundColor, value: NSColor.labelColor, forCharacterRange: span)
+                return
+            }
+            guard
+                  let rgb = color.usingColorSpace(.deviceRGB) else { return }
+            let brightness = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+            if (dark && brightness < 0.25) || (!dark && brightness > 0.85) {
+                layout.addTemporaryAttribute(.foregroundColor, value: NSColor.labelColor, forCharacterRange: span)
+            }
+        }
+    }
+}
+
+final class TranslationTextView: ReadableRichTextView {
+    override func paste(_ sender: Any?) {
+        guard isEditable, let plain = NSPasteboard.general.string(forType: .string) else { return }
+        let markdown = MarkdownTranslation.importText(plain, styled: RichText.fromPasteboard(.general))
+        insertText(markdown, replacementRange: selectedRange())
+    }
+
     var onSelectionEnded: ((NSPoint, Int, Bool) -> Void)?
     var onCompositionEnded: ((NSTextView) -> Void)?
     private var inputDepth = 0
@@ -556,5 +596,39 @@ private struct TranslationScrollAppearance: NSViewRepresentable {
     func updateNSView(_ view: Probe, context: Context) {
         view.configure()
         DispatchQueue.main.async { [weak view] in view?.configure() }
+    }
+}
+
+
+struct MarkdownResultView: View {
+    let markdown: String
+    private var rows: [(text: String, code: Bool, level: Int)] {
+        var fence: String?; var values: [(String, Bool, Int)] = []
+        for line in markdown.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                let marker = String(trimmed.prefix(3))
+                if fence == nil { fence = marker } else if fence == marker { fence = nil }
+                continue
+            }
+            let hashes = line.prefix(while: { $0 == "#" }).count
+            let heading = hashes > 0 && hashes <= 6 && line.dropFirst(hashes).hasPrefix(" ")
+            values.append((heading ? String(line.dropFirst(hashes + 1)) : line, fence != nil || line.hasPrefix("    "), heading ? hashes : 0))
+        }
+        return values
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                if row.code {
+                    Text(row.text.isEmpty ? " " : row.text).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
+                } else {
+                    Text((try? AttributedString(markdown: row.text.isEmpty ? " " : row.text,
+                        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(row.text))
+                        .font(.system(size: row.level > 0 ? CGFloat(max(17, 26 - row.level * 2)) : 15, weight: row.level > 0 ? .bold : .regular))
+                        .foregroundStyle(.primary).textSelection(.enabled)
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

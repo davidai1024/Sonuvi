@@ -61,8 +61,9 @@ enum SelectionReader {
                       selection.length <= TextLimits.utf16Units else { continuation.resume(returning: nil); return }
                 var value: CFTypeRef?
                 guard AXUIElementCopyParameterizedAttributeValue(element, kAXAttributedStringForRangeParameterizedAttribute as CFString, range, &value) == .success,
-                      let styled = value as? NSAttributedString, styled.string == text else { continuation.resume(returning: nil); return }
-                continuation.resume(returning: RichText.normalizeAX(styled))
+                      let styled = value as? NSAttributedString,
+                      let aligned = RichText.aligned(styled, to: text) else { continuation.resume(returning: nil); return }
+                continuation.resume(returning: RichText.normalizeAX(aligned))
             }
         }
     }
@@ -106,8 +107,8 @@ enum SelectionReader {
             if !items.isEmpty { pasteboard.writeObjects(items) }
         }
         guard !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-              value?.string == text else { return nil }
-        return value
+              let value else { return nil }
+        return RichText.aligned(value, to: text)
     }
     static func probeAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> SelectionProbe {
         guard trusted, !Task.isCancelled else { return .empty }
