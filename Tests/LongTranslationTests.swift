@@ -106,12 +106,36 @@ func runLongTranslationTests() async {
     let markdownBoard = NSPasteboard.withUniqueName(); defer { markdownBoard.releaseGlobally() }
     let backing = "# Heading\n**bold** [link](https://example.com)"
     MarkdownClipboard.write(backing, to: markdownBoard)
-    check(markdownBoard.string(forType: .string) == "Heading\nbold link", "Copied visible text never contains hidden Markdown markers or destinations")
+    check(markdownBoard.string(forType: .string) == backing, "Plain-text Markdown editors receive the complete Markdown source")
     check(markdownBoard.string(forType: .init("net.daringfireball.markdown")) == backing, "Clipboard exports a standard Markdown representation alongside plain text")
+    let exported = try! NSAttributedString(data: markdownBoard.data(forType: .rtf)!, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil)
+    check(exported.string == "Heading\nbold link", "Document editors receive readable rich text without Markdown markers")
+    let exportedBold = (exported.string as NSString).range(of: "bold")
+    check((exported.attribute(.font, at: exportedBold.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true, "Copied rich text preserves bold formatting")
+    check((exported.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == 20, "Copied rich text preserves heading size")
+    let exportedLink = (exported.string as NSString).range(of: "link")
+    check((exported.attribute(.link, at: exportedLink.location, effectiveRange: nil) as? URL)?.absoluteString == "https://example.com", "Copied rich text retains link destination")
     check(MarkdownClipboard.read(markdownBoard) == backing, "Clipboard round-trip preserves exact Markdown backing")
     let roundTripEditor = TranslationTextView(); roundTripEditor.isEditable = true; roundTripEditor.isRichText = false
     roundTripEditor.pasteMarkdown(from: markdownBoard)
     check(roundTripEditor.string == "Heading\nbold link" && roundTripEditor.markdownBacking == backing, "Native repaste keeps plain display and Markdown backing separate")
+    let fixture = NSMutableAttributedString(string: "Word title\n1. Important item\n2. Next item", attributes: [.font: NSFont.systemFont(ofSize: 14)])
+    fixture.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 20), range: (fixture.string as NSString).range(of: "Word title"))
+    fixture.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: (fixture.string as NSString).range(of: "Important"))
+    let sourceMarkdown = MarkdownTranslation.importText(fixture.string, styled: fixture)
+    let translatedMarkdown = try! await TranslationWork(sourceMarkdown).run(send: { value, _ in
+        value.replacingOccurrences(of: "Word title", with: "译文标题").replacingOccurrences(of: "Important", with: "重要")
+    }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    for (markdown, expectedBold) in [(sourceMarkdown, "Important"), (translatedMarkdown, "重要")] {
+        let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
+        MarkdownClipboard.write(markdown, to: board)
+        let receiver = NSTextView(); receiver.isEditable = true; receiver.isRichText = true
+        let inserted = receiver.readSelection(from: board, type: .rtf)
+        let selected = (receiver.string as NSString).range(of: expectedBold)
+        check(inserted && selected.location != NSNotFound && (receiver.textStorage?.attribute(.font, at: selected.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
+              "Document-style source and translated copy paste with inline bold")
+        check(receiver.string.contains("1. ") && receiver.string.contains("2. "), "Copied document retains numbered list structure")
+    }
     var editorText = ""; var editorRich: NSAttributedString?
     let editorSpec = TranslationEditor(text: Binding(get: { editorText }, set: { editorText = $0 }),
         height: .constant(40), focusRequest: 0, onAttributedChange: { editorRich = $0 }, onSelection: { _,_,_ in })

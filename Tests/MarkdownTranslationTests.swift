@@ -35,5 +35,11 @@ func runMarkdownTranslationTests() async {
     check(MarkdownTranslation.importText(word.string, styled: word) == "## Title\n**Bold** text", "Word semantic styles become Markdown without document colors")
     let already = NSAttributedString(string: "# Heading\n**bold**", attributes: [.font: NSFont.boldSystemFont(ofSize: 14)])
     check(MarkdownTranslation.importText(already.string, styled: already) == already.string, "Existing Markdown is never converted twice")
+    let wordHeading = NSMutableAttributedString(string: "Word heading\nNormal paragraph", attributes: [.font: NSFont.systemFont(ofSize: 11)])
+    wordHeading.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 16), range: (wordHeading.string as NSString).range(of: "Word heading"))
+    check(MarkdownTranslation.importText(wordHeading.string, styled: wordHeading) == "## Word heading\nNormal paragraph", "Typical Word-sized headings become Markdown headings")
+    let wordList = NSMutableAttributedString(string: "1. Important item\n2. Normal item", attributes: [.font: NSFont.systemFont(ofSize: 14)])
+    wordList.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: (wordList.string as NSString).range(of: "Important"))
+    check(MarkdownTranslation.importText(wordList.string, styled: wordList) == "1. **Important** item\n2. Normal item", "Word list markers and inline bold both survive import")
     print("PASS: \(count) Markdown checks")
 }
