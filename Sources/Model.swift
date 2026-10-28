@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     @Published var source = "" {
         didSet {
             guard oldValue != source else { return }
+            sourceAttributed = nil; resultAttributed = nil
             classificationTask?.cancel()
             if !editingSource { refreshSourceClassification() }
             sourceApp = nil
@@ -37,6 +38,8 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var result = ""
+    @Published var sourceAttributed: NSAttributedString?
+    @Published var resultAttributed: NSAttributedString?
     @Published var word: WordResult?
     @Published var inputKind: InputKind = .auto {
         didSet { if oldValue != inputKind { cancel(); result = ""; word = nil } }
@@ -130,6 +133,7 @@ final class AppModel: ObservableObject {
     private var cache: [String: (String, WordResult?)] = [:]
     private var translationWork: TranslationWork?
     private var translationWorkKey = ""
+    func invalidateTranslationWork() { translationWorkKey = ""; translationWork = nil }
     var effectiveKind: InputKind { sourceIsLong ? .sentence : (inputKind == .auto ? sourceClassification.kind : inputKind) }
     var direction: Direction { sourceClassification.direction }
     var englishText: String { direction == .toChinese ? source : (word?.translation ?? result) }
@@ -225,8 +229,11 @@ final class AppModel: ObservableObject {
             translateShortcut.store("translateShortcut"); readShortcut.store("readShortcut"); ocrShortcut.store("ocrShortcut")
         }
     }
-    func setSource(_ text: String, app: String? = nil) {
-        cancel(); stopSpeaking(); source = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    func setSource(_ text: String, app: String? = nil, attributed: NSAttributedString? = nil) {
+        cancel(); stopSpeaking(); source = text
+        sourceAttributed = attributed?.string == text ? attributed : nil
+        invalidateTranslationWork()
+        resultAttributed = nil
         sourceApp = app
         result = ""; word = nil; error = ""; recoverySettingsTab = nil; inputKind = .auto
     }
@@ -237,7 +244,7 @@ final class AppModel: ObservableObject {
         if ocrBusy { cancelOCR?() }
         if readingTranslation { readingTranslation = false; readingStatus = nil }
         if busy, let work = translationWork, effectiveKind != .word {
-            result = work.output
+            result = work.output; resultAttributed = work.attributedOutput
             statusText = result.isEmpty ? "" : "已取消，已完成的译文已保留。"
         }
         currentID = UUID(); task?.cancel(); task = nil; busy = false }
@@ -268,11 +275,11 @@ final class AppModel: ObservableObject {
         let model = name.isEmpty ? "deepseek-flash" : name
         let cacheKey = "literal-v2|\(model)|\(dir.rawValue)|\(kind.rawValue)|\(text)"
         if translationWorkKey != cacheKey {
-            translationWorkKey = cacheKey; translationWork = kind == .word ? nil : TranslationWork(text)
+            translationWorkKey = cacheKey; translationWork = kind == .word ? nil : TranslationWork(text, attributed: sourceAttributed)
         }
         let work = translationWork
         if let work { result = work.output }
-        if let cached = cache[cacheKey] { usage.translation(text: text, kind: kind, app: sourceApp, cached: true); result = cached.0; word = cached.1; if autoRead || readAfter { speak(presentation: readAfter ? presentation : .inline) }; return }
+        if sourceAttributed == nil, let cached = cache[cacheKey] { usage.translation(text: text, kind: kind, app: sourceApp, cached: true); result = cached.0; word = cached.1; if autoRead || readAfter { speak(presentation: readAfter ? presentation : .inline) }; return }
         let id = currentID
         let originApp = sourceApp
         usage.touch()
@@ -288,6 +295,7 @@ final class AppModel: ObservableObject {
                     }, onUpdate: { [weak self] value in
                         guard let self, self.currentID == id, !Task.isCancelled else { return }
                         self.result = value
+                        self.resultAttributed = work.attributedOutput
                     }, onProgress: { [weak self] part, total, retrying in
                         guard let self, self.currentID == id, !Task.isCancelled else { return }
                         self.statusText = retrying ? "连接暂时中断，正在重试第 \(part)/\(total) 段…"
@@ -311,7 +319,7 @@ final class AppModel: ObservableObject {
                 guard self.currentID == id else { return }
                 if kind == .word { self.word = try WordResult.parse(output); self.result = self.word?.translation ?? "" }
                 else { self.result = output }
-                if text.count <= 12000 {
+                if text.count <= 12000 && self.sourceAttributed == nil {
                     if self.cache.count >= 30 { self.cache.removeAll() }
                     self.cache[cacheKey] = (self.result, self.word)
                 }
@@ -320,7 +328,7 @@ final class AppModel: ObservableObject {
                 if self.autoRead || readAfter { self.speak(presentation: readAfter ? presentation : .inline) }
             } catch {
                 guard self.currentID == id, !Task.isCancelled else { return }
-                self.busy = false; self.result = work?.output ?? ""; self.word = nil; self.statusText = ""
+                self.busy = false; self.result = work?.output ?? ""; self.resultAttributed = work?.attributedOutput; self.word = nil; self.statusText = ""
                 if let error = error as? TranslateError { self.error = error.localizedDescription }
                 else if error is DecodingError { self.error = "词典结果格式不完整，请重试或切换句子模式。" }
                 else { self.error = "网络连接失败或超时，请检查网络后重试。" }
@@ -334,7 +342,8 @@ final class AppModel: ObservableObject {
     func copy(_ value: String) {
         guard !value.isEmpty else { return }
         usage.copied()
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string)
+        let styled = value == result ? resultAttributed : (value == source ? sourceAttributed : nil)
+        RichText.write(value, styled: styled, to: .general)
         let id = UUID(); toastID = id; toast = "已复制"
         Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if toastID == id { toast = "" } }
     }

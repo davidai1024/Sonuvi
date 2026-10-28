@@ -37,6 +37,78 @@ enum SelectionReader {
     static func fromAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> String? {
         await probeAccessibility(pid: pid, at: point).text
     }
+    // Ask only the currently focused selected range for rich text. Applications
+    // that do not expose this AX attribute continue through the plain path.
+    static func attributedSelection(pid: pid_t, matching text: String) async -> NSAttributedString? {
+        guard trusted, !Task.isCancelled else { return nil }
+        return await withCheckedContinuation { continuation in
+            lookupQueue.async {
+                let application = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(application, 0.12)
+                var focused: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+                      let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { continuation.resume(returning: nil); return }
+                let element = focused as! AXUIElement
+                AXUIElementSetMessagingTimeout(element, 0.12)
+                var subrole: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+                guard subrole as? String != kAXSecureTextFieldSubrole else { continuation.resume(returning: nil); return }
+                var range: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success,
+                      let range, CFGetTypeID(range) == AXValueGetTypeID() else { continuation.resume(returning: nil); return }
+                var selection = CFRange()
+                guard AXValueGetValue(range as! AXValue, .cfRange, &selection), selection.length > 0,
+                      selection.length <= TextLimits.utf16Units else { continuation.resume(returning: nil); return }
+                var value: CFTypeRef?
+                guard AXUIElementCopyParameterizedAttributeValue(element, kAXAttributedStringForRangeParameterizedAttribute as CFString, range, &value) == .success,
+                      let styled = value as? NSAttributedString, styled.string == text else { continuation.resume(returning: nil); return }
+                continuation.resume(returning: RichText.normalizeAX(styled))
+            }
+        }
+    }
+    // Explicit translation only: when the source app does not expose AX styles,
+    // try its normal Copy command and restore the user's prior clipboard.
+    static func copiedAttributedSelection(pid: pid_t, matching text: String, pasteboard: NSPasteboard = .general) async -> NSAttributedString? {
+        guard trusted, !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
+        let app = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(app, 0.12)
+        var focused: CFTypeRef?; var subrole: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSubroleAttribute as CFString, &subrole)
+        guard subrole as? String != kAXSecureTextFieldSubrole else { return nil }
+        let before = pasteboard.changeCount
+        let saved: [[NSPasteboard.PasteboardType: Data]] = (pasteboard.pasteboardItems ?? []).map { item in
+            var values: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types { if let data = item.data(forType: type) { values[type] = data } }
+            return values
+        }
+        guard saved.reduce(0, { $0 + $1.values.reduce(0, { $0 + $1.count }) }) <= 16_000_000,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false)
+        down?.flags = .maskCommand; up?.flags = .maskCommand
+        down?.postToPid(pid); up?.postToPid(pid)
+        for _ in 0..<45 {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.035) { continuation.resume() }
+            }
+            if pasteboard.changeCount != before { break }
+        }
+        guard pasteboard.changeCount != before else { return nil }
+        let copied = pasteboard.changeCount
+        let value = RichText.fromPasteboard(pasteboard)
+        if pasteboard.changeCount == copied {
+            pasteboard.clearContents()
+            let items = saved.map { values -> NSPasteboardItem in
+                let item = NSPasteboardItem(); for (type, data) in values { item.setData(data, forType: type) }; return item
+            }
+            if !items.isEmpty { pasteboard.writeObjects(items) }
+        }
+        guard !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+              value?.string == text else { return nil }
+        return value
+    }
     static func probeAccessibility(pid: pid_t, at point: NSPoint? = nil) async -> SelectionProbe {
         guard trusted, !Task.isCancelled else { return .empty }
         let axPoint = point.map { CGPoint(x: $0.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - $0.y) }
@@ -247,7 +319,7 @@ enum SelectionReader {
             if !items.isEmpty { pasteboard.writeObjects(items) }
         }
         guard !Task.isCancelled, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
-        return text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text
     }
 }
 

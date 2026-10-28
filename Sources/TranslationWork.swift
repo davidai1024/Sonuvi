@@ -1,9 +1,10 @@
 // Sonuvi — GPL-3.0.
-import Foundation
+import AppKit
 
 struct TranslationPart {
     let text: String
     let separator: String
+    var attributes: [NSAttributedString.Key: Any] = [:]
 
     // Split at every explicit line break; retain separators locally rather than
     // relying on the model to reproduce them. Long lines are split at safe
@@ -49,9 +50,40 @@ final class TranslationWork {
     private let leading: String
     var output: String { prefix }
     var prefix: String { completed.isEmpty ? "" : leading + completed.enumerated().map { $0.element + parts[$0.offset].separator }.joined() }
-    init(_ text: String) {
+    var attributedOutput: NSAttributedString? {
+        guard hasStyles, !completed.isEmpty else { return nil }
+        let result = NSMutableAttributedString(string: leading, attributes: parts.first?.attributes)
+        for (index, value) in completed.enumerated() {
+            result.append(NSAttributedString(string: value + parts[index].separator, attributes: parts[index].attributes))
+        }
+        return result
+    }
+    private let hasStyles: Bool
+    init(_ text: String, attributed: NSAttributedString? = nil) {
         leading = String(text.prefix(while: { $0.isWhitespace }))
         parts = TranslationPart.split(String(text.dropFirst(leading.count)))
+        hasStyles = attributed?.string == text && attributed?.length != 0
+        if hasStyles, let attributed {
+            var offset = (leading as NSString).length
+            var styled: [TranslationPart] = []
+            for part in parts {
+                let length = (part.text as NSString).length
+                let sourceRange = NSRange(location: offset, length: length)
+                var ranges: [(NSRange, [NSAttributedString.Key: Any])] = []
+                attributed.enumerateAttributes(in: sourceRange) { attrs, range, _ in
+                    let allowed: Set<NSAttributedString.Key> = [.font, .foregroundColor, .backgroundColor, .underlineStyle, .strikethroughStyle, .paragraphStyle]
+                    ranges.append((range, attrs.filter { allowed.contains($0.key) }))
+                }
+                for (i, item) in ranges.enumerated() {
+                    let piece = (text as NSString).substring(with: item.0)
+                    let trailing = String(piece.reversed().prefix(while: { $0.isWhitespace }).reversed())
+                    let body = String(piece.dropLast(trailing.count))
+                    styled.append(TranslationPart(text: body, separator: trailing + (i == ranges.count - 1 ? part.separator : ""), attributes: item.1))
+                }
+                offset += length + (part.separator as NSString).length
+            }
+            parts = styled
+        }
     }
 
     // Preserve leading indentation and common list markers outside the model.
@@ -129,7 +161,8 @@ final class TranslationWork {
                     let part = parts[index]
                     guard part.text.count > 200 else { throw TranslateError.message("这段译文未能完整生成，请重试。") }
                     var smaller = TranslationPart.split(part.text, maximum: max(100, part.text.count / 2))
-                    if let last = smaller.popLast() { smaller.append(TranslationPart(text: last.text, separator: last.separator + part.separator)) }
+                    smaller = smaller.map { TranslationPart(text: $0.text, separator: $0.separator, attributes: part.attributes) }
+                    if let last = smaller.popLast() { smaller.append(TranslationPart(text: last.text, separator: last.separator + part.separator, attributes: last.attributes)) }
                     parts.replaceSubrange(index...index, with: smaller)
                     onUpdate(output)
                 }

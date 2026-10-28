@@ -18,6 +18,7 @@ enum TextRules {
     }
     static func kind(_ text: String) -> InputKind {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.contains(where: { $0.isNewline }) { return .sentence }
         if trimmed.range(of: "^[A-Za-z]+(?:['’\\-][A-Za-z]+)*$", options: .regularExpression) != nil { return .word }
         let commonPhrases: Set<String> = ["thank you", "good morning", "good evening", "look forward to", "take care of", "in terms of", "as well as", "by the way", "take off", "give up"]
         if commonPhrases.contains(trimmed.lowercased()) { return .word }

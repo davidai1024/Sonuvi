@@ -1,5 +1,6 @@
 // Sonuvi — GPL-3.0. Synthetic fixtures only; never read a user's clipboard.
 import AppKit
+import SwiftUI
 
 @MainActor
 func runLongTranslationTests() async {
@@ -60,6 +61,40 @@ func runLongTranslationTests() async {
     let oneLineWork = TranslationWork(oneLine)
     let oneLineOutput = try! await oneLineWork.run(send: { text, _ in text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
     check(oneLineOutput == oneLine, "Splitting a long line does not invent line breaks")
+    check(TextRules.kind("Hello\nworld") == .sentence, "Multiline input cannot enter dictionary mode")
+    let style = NSMutableParagraphStyle(); style.paragraphSpacing = 16
+    let richSource = NSMutableAttributedString(string: "Heading\nHello bold text.\n\nFinal paragraph.",
+        attributes: [.font: NSFont.systemFont(ofSize: 14), .paragraphStyle: style])
+    let titleRange = (richSource.string as NSString).range(of: "Heading")
+    let boldRange = (richSource.string as NSString).range(of: "bold")
+    richSource.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 22), range: titleRange)
+    richSource.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: boldRange)
+    let richWork = TranslationWork(richSource.string, attributed: richSource)
+    let richOutput = try! await richWork.run(send: { text, _ in text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    let rich = richWork.attributedOutput!
+    check(richOutput == richSource.string && rich.string == richOutput, "Styled input preserves text and paragraph boundaries")
+    check((rich.attribute(.font, at: titleRange.location, effectiveRange: nil) as? NSFont)?.pointSize == 22,
+          "Styled translation preserves heading size")
+    check((rich.attribute(.font, at: boldRange.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
+          "Styled translation preserves inline bold")
+    check((rich.attribute(.paragraphStyle, at: titleRange.location, effectiveRange: nil) as? NSParagraphStyle)?.paragraphSpacing == 16,
+          "Styled translation preserves paragraph spacing")
+    let richBoard = NSPasteboard.withUniqueName(); defer { richBoard.releaseGlobally() }
+    RichText.write(richOutput, styled: rich, to: richBoard)
+    let pastedRich = RichText.fromPasteboard(richBoard)
+    check(pastedRich?.string == richOutput && (pastedRich?.attribute(.font, at: boldRange.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
+          "Rich clipboard round-trip retains translated text and inline bold")
+    var editorText = ""; var editorRich: NSAttributedString?
+    let editorSpec = TranslationEditor(text: Binding(get: { editorText }, set: { editorText = $0 }),
+        height: .constant(40), focusRequest: 0, onAttributedChange: { editorRich = $0 }, onSelection: { _,_,_ in })
+    let coordinator = editorSpec.makeCoordinator()
+    let richEditor = TranslationTextView(); richEditor.isEditable = true; richEditor.isRichText = true
+    let inserted = richEditor.readSelection(from: richBoard, type: .rtf)
+    coordinator.commit(richEditor)
+    check(inserted && editorText == richOutput && editorRich?.string == richOutput,
+          "Native source editor imports clipboard RTF into the translation model")
+    check((editorRich?.attribute(.font, at: boldRange.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
+          "Native source editor retains pasted inline bold")
     let cancelled = TranslationWork(mixed)
     let task = Task { @MainActor in try await cancelled.run(send: { text, update in
         try await Task.sleep(nanoseconds: 2_000_000_000); update(text); return text
