@@ -532,7 +532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func translateClipboard() {
         if needsOnboarding || onboardingVisible { showOnboarding(); return }
         guard let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { model.error = "剪贴板中没有可翻译的文字。"; showWindow(); return }
-        model.setSource(text, attributed: RichText.fromPasteboard(.general)); showWindow(); model.translate()
+        model.setSource(MarkdownClipboard.read(.general) ?? text); showWindow(); model.translate()
     }
     func applicationWillTerminate(_ notification: Notification) {
         browserServer.stop()
@@ -832,6 +832,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let editor = window.firstResponder as? NSTextView {
             let range = editor.selectedRange()
             let text = editor.string as NSString
+            if let styled = editor as? TranslationTextView, let markdown = styled.selectedMarkdown() { return markdown }
             if range.length > 0, NSMaxRange(range) <= text.length { return text.substring(with: range) }
         }
         return model.source
@@ -1104,7 +1105,7 @@ else if CommandLine.arguments.contains("--window-interaction-test") { MainActor.
 else if CommandLine.arguments.contains("--menu-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; RunLoop.main.perform { MainActor.assumeIsolated { runMenuCaptureTest() } }; app.run() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
-else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); exit(0) }; dispatchMain() } }
+else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); runMarkdownDocumentTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--network-test") { Task { await runNetworkTests(); exit(0) }; dispatchMain() }
 else {

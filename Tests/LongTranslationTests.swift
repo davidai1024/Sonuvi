@@ -98,11 +98,19 @@ func runLongTranslationTests() async {
     let wordEditor = TranslationTextView(); wordEditor.isEditable = true; wordEditor.isRichText = false
     wordEditor.textColor = .labelColor
     wordEditor.pasteMarkdown(from: richBoard)
-    check(wordEditor.string == MarkdownTranslation.importText(richOutput, styled: pastedRich), "Native paste converts rich clipboard into editable Markdown")
-    check(wordEditor.string.contains("## Heading") && wordEditor.string.contains("**bold**"), "Native paste retains heading and emphasis as Markdown")
+    check(wordEditor.string == MarkdownDocument(MarkdownTranslation.importText(richOutput, styled: pastedRich)).plain, "Native paste presents only clean text from a rich clipboard")
+    check(!wordEditor.string.contains("## Heading") && !wordEditor.string.contains("**bold**") && wordEditor.markdownBacking?.contains("**bold**") == true, "Native paste hides heading and emphasis markers while retaining Markdown backing")
     let importedModel = AppModel(); importedModel.previewMode = true
     importedModel.setSource(richOutput, attributed: pastedRich)
-    check(importedModel.source == wordEditor.string && importedModel.sourceAttributed == nil, "Selection import and native paste produce identical Markdown without document colors")
+    check(importedModel.sourceDisplay == wordEditor.string && importedModel.source == wordEditor.markdownBacking && importedModel.sourceAttributed == nil, "Selection import and native paste produce identical Markdown without document colors")
+    let markdownBoard = NSPasteboard.withUniqueName(); defer { markdownBoard.releaseGlobally() }
+    let backing = "# Heading\n**bold** [link](https://example.com)"
+    MarkdownClipboard.write(backing, to: markdownBoard)
+    check(markdownBoard.string(forType: .string) == "Heading\nbold link", "Copied visible text never contains hidden Markdown markers or destinations")
+    check(MarkdownClipboard.read(markdownBoard) == backing, "Clipboard round-trip preserves exact Markdown backing")
+    let roundTripEditor = TranslationTextView(); roundTripEditor.isEditable = true; roundTripEditor.isRichText = false
+    roundTripEditor.pasteMarkdown(from: markdownBoard)
+    check(roundTripEditor.string == "Heading\nbold link" && roundTripEditor.markdownBacking == backing, "Native repaste keeps plain display and Markdown backing separate")
     var editorText = ""; var editorRich: NSAttributedString?
     let editorSpec = TranslationEditor(text: Binding(get: { editorText }, set: { editorText = $0 }),
         height: .constant(40), focusRequest: 0, onAttributedChange: { editorRich = $0 }, onSelection: { _,_,_ in })
