@@ -109,7 +109,7 @@ struct TranslateView: View {
             Menu {
                 Button(L10n.text("粘贴并翻译")) {
                     if let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        model.setSource(text); model.translate()
+                        model.setSource(text, attributed: RichText.fromPasteboard(.general)); model.translate()
                     }
                 }
                 Button(L10n.text("截图翻译 " + model.ocrShortcut.label)) { model.startOCR?() }
@@ -150,6 +150,7 @@ struct TranslateView: View {
                     LText(model.ocrRecognizing ? "正在识别选区文字…" : "选中文字，或在这里输入…").font(.system(size: 13, weight: .regular)).foregroundStyle(.tertiary).padding(.top, 1).allowsHitTesting(false)
                 }
                 TranslationEditor(text: Binding(get: { model.source }, set: { model.editSource($0) }), height: $sourceHeight, focusRequest: focusRequest,
+                    styledText: model.sourceAttributed, onAttributedChange: { value in model.sourceAttributed = value; model.invalidateTranslationWork() },
                     onSelection: { model.onLocalSelection?($0, $1, $2) })
                     .frame(height: sourceHeight)
                     .accessibilityLabel(L10n.text("原文"))
@@ -213,7 +214,11 @@ struct TranslateView: View {
                 if let word = model.word {
                     dictionary(word)
                 } else if !model.result.isEmpty {
-                    Text(model.result).font(.system(size: 15)).lineSpacing(5).textSelection(.enabled)
+                    Group {
+                        if let rich = model.resultAttributed, rich.string == model.result {
+                            RichResultView(value: rich)
+                        } else { Text(model.result).font(.system(size: 15)).lineSpacing(5) }
+                    }.textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.error.isEmpty && model.ocrRecognizing {
                     LText("正在本机识别文字，随后自动翻译…")
@@ -269,6 +274,32 @@ struct TranslateView: View {
     }
 }
 
+// AppKit lays out document paragraph spacing and indentation as well as font
+// runs; SwiftUI Text does not render all of those attributes.
+struct RichResultView: NSViewRepresentable {
+    let value: NSAttributedString
+    func makeNSView(context: Context) -> NSTextView {
+        let view = NSTextView()
+        view.isEditable = false; view.isSelectable = true; view.isRichText = true
+        view.drawsBackground = false; view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.isHorizontallyResizable = false; view.isVerticallyResizable = true
+        view.textContainer?.widthTracksTextView = false
+        return view
+    }
+    func updateNSView(_ view: NSTextView, context: Context) {
+        if let storage = view.textStorage, !storage.isEqual(to: value) { storage.setAttributedString(value) }
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width > 0, let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
+        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        let extra = layout.extraLineFragmentRect
+        return CGSize(width: width, height: ceil(max(used.maxY, extra.maxY)))
+    }
+}
+
 private struct TranslationHeight: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
@@ -280,6 +311,8 @@ struct TranslationEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var height: CGFloat
     var focusRequest: Int
+    var styledText: NSAttributedString? = nil
+    var onAttributedChange: (NSAttributedString?) -> Void = { _ in }
     var onSelection: (NSPoint, Int, Bool) -> Void
     final class Coordinator: NSObject, NSTextViewDelegate {
         var owner: TranslationEditor
@@ -301,10 +334,15 @@ struct TranslationEditor: NSViewRepresentable {
                 synchronizedText = view.string
                 owner.text = view.string
             }
+            owner.onAttributedChange(view.textStorage.map { NSAttributedString(attributedString: $0) })
         }
         func synchronize(_ view: NSTextView) {
             let incoming = owner.text
-            guard incoming != synchronizedText else { return }
+            if incoming == synchronizedText {
+                if !view.hasMarkedText(), let styled = owner.styledText, styled.string == incoming,
+                   let storage = view.textStorage, !storage.isEqual(to: styled) { storage.setAttributedString(styled) }
+                return
+            }
             synchronizedText = incoming
             // SwiftUI redraws must not terminate the input method's marked range.
             if view.hasMarkedText() { pendingReplacement = incoming; return }
@@ -312,7 +350,8 @@ struct TranslationEditor: NSViewRepresentable {
         }
         private func replace(_ view: NSTextView, with text: String) {
             guard view.string != text else { return }
-            view.string = text
+            if let styled = owner.styledText, styled.string == text { view.textStorage?.setAttributedString(styled) }
+            else { view.string = text }
             view.undoManager?.removeAllActions()
             (view.enclosingScrollView as? ContentSizedTextScrollView)?.invalidateMeasurement()
         }
@@ -333,7 +372,7 @@ struct TranslationEditor: NSViewRepresentable {
         editor.onCompositionEnded = { [weak coordinator = context.coordinator] view in coordinator?.commit(view) }
         editor.string = text
         editor.isEditable = true; editor.isSelectable = true
-        editor.isRichText = false; editor.allowsUndo = true; editor.drawsBackground = false
+        editor.isRichText = true; editor.importsGraphics = false; editor.allowsUndo = true; editor.drawsBackground = false
         editor.font = .systemFont(ofSize: 15); editor.textColor = .labelColor; editor.insertionPointColor = .labelColor
         editor.isVerticallyResizable = true; editor.isHorizontallyResizable = false
         editor.autoresizingMask = [.width]; editor.textContainerInset = .zero
@@ -343,6 +382,7 @@ struct TranslationEditor: NSViewRepresentable {
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 4
         editor.defaultParagraphStyle = paragraph
         editor.typingAttributes = [.font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
+        if let styled = styledText, styled.string == text { editor.textStorage?.setAttributedString(styled) }
         editor.setAccessibilityLabel(L10n.text("原文")); editor.delegate = context.coordinator
         scroll.documentView = editor
         return scroll
@@ -373,7 +413,7 @@ enum TextEditingCommands {
         switch key {
         case "c": editor.copy(nil)
         case "a": editor.selectAll(nil)
-        case "v" where editor.isEditable: editor.pasteAsPlainText(nil)
+        case "v" where editor.isEditable: editor.paste(nil)
         case "x" where editor.isEditable: editor.cut(nil)
         case "z" where editor.isEditable: editor.undoManager?.undo(); editor.didChangeText()
         default: return false
