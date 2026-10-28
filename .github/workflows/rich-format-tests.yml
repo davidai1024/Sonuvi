@@ -1,0 +1,28 @@
+name: Rich translation format tests
+on:
+  pull_request:
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - '.github/workflows/rich-format-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare verified Sparkle
+        run: python3 Tools/prepare_sparkle.py
+      - name: Compile application and tests
+        shell: bash
+        run: |
+          mkdir -p build/module-cache
+          SDK="$(pwd)/build/Sparkle-2.10.0"
+          swiftc -j 4 -swift-version 5 -target "$(uname -m)-apple-macosx13.0" -module-cache-path build/module-cache Sources/*.swift Tests/*.swift -F "$SDK" -framework Sparkle -Xlinker -rpath -Xlinker "$SDK" -framework AVFoundation -framework AppKit -framework SwiftUI -framework ApplicationServices -framework Carbon -framework LocalAuthentication -framework Security -framework NaturalLanguage -framework Vision -framework ServiceManagement -framework CoreText -framework Charts -framework ScreenCaptureKit -o build/Sonuvi
+      - name: Test rich clipboard and translation layout
+        shell: bash
+        run: |
+          build/Sonuvi --long-translation-test
+          build/Sonuvi --translation-layout-test
