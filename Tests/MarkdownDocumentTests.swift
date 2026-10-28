@@ -35,5 +35,13 @@ func runMarkdownDocumentTests() {
     let range = (model.sourceDisplay as NSString).range(of: "Item")
     model.pasteSourceMarkdown("**New** [link](https://new.example)", range: range)
     check(model.source.contains("- **New** [link](https://new.example)") && !model.sourceDisplay.contains("https://"), "Pasting into a plain selection retains new Markdown metadata")
+    let board = NSPasteboard.withUniqueName()
+    defer { board.releaseGlobally() }
+    board.clearContents(); board.setString(source, forType: .string)
+    check(MarkdownClipboard.readMatchingSelection(board, text: source) == source, "Selected Markdown source survives a plain-text copy")
+    check(MarkdownClipboard.readMatchingSelection(board, text: document.plain) == source, "Rendered selection matches copied Markdown source")
+    check(MarkdownClipboard.readMatchingSelection(board, text: "unrelated selection") == nil, "A different selection cannot reuse stale clipboard content")
+    MarkdownClipboard.write(source, to: board)
+    check(board.string(forType: .string) == source, "Markdown editor receives original syntax as plain clipboard text")
     print("PASS: \(count) plain-display document checks")
 }

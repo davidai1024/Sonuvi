@@ -29,7 +29,7 @@ struct TranslateView: View {
                             })
                         languageBar
                         resultCard
-                    }.padding(.horizontal, 12).padding(.bottom, 8)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
                         .background(TranslationScrollAppearance())
                         .background(GeometryReader { geometry in Color.clear.preference(key: TranslationHeight.self, value: geometry.size.height) })
                 }
@@ -156,7 +156,7 @@ struct TranslateView: View {
                     .frame(height: sourceHeight)
                     .accessibilityLabel(L10n.text("原文"))
             }.font(.system(size: 15)).lineSpacing(4)
-        }.padding(10).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
+        }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private var languageBar: some View {
@@ -233,7 +233,7 @@ struct TranslateView: View {
                 if model.word != nil { LText("AI 释义").font(.system(size: 10)).foregroundStyle(.tertiary) }
             }.padding(.horizontal, 10).padding(.top, 5).padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }.background(cardColor, in: RoundedRectangle(cornerRadius: 9))
+        }.frame(maxWidth: .infinity, alignment: .leading).background(cardColor, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func dictionary(_ word: WordResult) -> some View {

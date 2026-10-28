@@ -131,6 +131,13 @@ struct MarkdownDocument {
 enum MarkdownClipboard {
     static let backingType = NSPasteboard.PasteboardType("org.sonuvi.markdown")
     static let markdownType = NSPasteboard.PasteboardType("net.daringfireball.markdown")
+    static func readMatchingSelection(_ board: NSPasteboard, text: String) -> String? {
+        guard let markdown = read(board) else { return nil }
+        for candidate in [board.string(forType: .string), markdown, MarkdownDocument(markdown).plain].compactMap({ $0 }) {
+            if RichText.aligned(NSAttributedString(string: candidate), to: text) != nil { return markdown }
+        }
+        return nil
+    }
     static func read(_ board: NSPasteboard) -> String? {
         guard let text = board.string(forType: .string) else { return nil }
         for type in [backingType, markdownType] {
