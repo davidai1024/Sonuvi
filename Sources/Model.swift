@@ -6,9 +6,15 @@ import SwiftUI
 final class AppModel: ObservableObject {
     private var sourceIsLong = false
     private var sourceClassification: (kind: InputKind, direction: Direction) = (.sentence, .toChinese)
+    private var sourceDocument = MarkdownDocument("")
+    private var sourceUndo: [(plain: String, markdown: String)] = []
+    private var sourceRedo: [(plain: String, markdown: String)] = []
+    var sourceDisplay: String { sourceDocument.plain }
     @Published var source = "" {
         didSet {
             guard oldValue != source else { return }
+            sourceDocument = MarkdownDocument(source)
+            if !editingSource { sourceUndo.removeAll(); sourceRedo.removeAll() }
             sourceAttributed = nil; resultAttributed = nil
             classificationTask?.cancel()
             if !editingSource { refreshSourceClassification() }
@@ -20,11 +26,28 @@ final class AppModel: ObservableObject {
             if !error.isEmpty { error = "" }
         }
     }
+    func editSourceDisplay(_ text: String) {
+        guard text != sourceDisplay else { return }
+        let current = (plain: sourceDisplay, markdown: source)
+        if sourceUndo.last?.plain == text {
+            let previous = sourceUndo.removeLast(); sourceRedo.append(current); editSource(previous.markdown)
+        } else if sourceRedo.last?.plain == text {
+            let next = sourceRedo.removeLast(); sourceUndo.append(current); editSource(next.markdown)
+        } else {
+            sourceUndo.append(current); if sourceUndo.count > 32 { sourceUndo.removeFirst() }
+            sourceRedo.removeAll(); editSource(sourceDocument.editingPlain(text))
+        }
+    }
+    func pasteSourceMarkdown(_ markdown: String, range: NSRange) {
+        sourceUndo.append((sourceDisplay, source)); if sourceUndo.count > 32 { sourceUndo.removeFirst() }
+        sourceRedo.removeAll()
+        editSource(sourceDocument.replacing(range, withMarkdown: markdown, entireDocument: true))
+    }
     private var editingSource = false
     private var classificationTask: Task<Void, Never>?
     private func refreshSourceClassification() {
         sourceIsLong = source.prefix(129).count > 128
-        sourceClassification = (sourceIsLong ? .sentence : TextRules.kind(source), TextRules.direction(source))
+        sourceClassification = (sourceIsLong || source != sourceDisplay ? .sentence : TextRules.kind(source), TextRules.direction(sourceDisplay))
     }
     func editSource(_ text: String) {
         guard source != text else { return }
@@ -230,7 +253,7 @@ final class AppModel: ObservableObject {
         }
     }
     func setSource(_ text: String, app: String? = nil, attributed: NSAttributedString? = nil) {
-        cancel(); stopSpeaking(); source = MarkdownTranslation.importText(text, styled: attributed)
+        cancel(); stopSpeaking(); sourceUndo.removeAll(); sourceRedo.removeAll(); source = MarkdownTranslation.importText(text, styled: attributed)
         sourceAttributed = nil
         invalidateTranslationWork()
         resultAttributed = nil
@@ -343,7 +366,8 @@ final class AppModel: ObservableObject {
         guard !value.isEmpty else { return }
         usage.copied()
         let styled = value == result ? resultAttributed : (value == source ? sourceAttributed : nil)
-        RichText.write(value, styled: styled, to: .general)
+        if value == source || value == result { MarkdownClipboard.write(value, to: .general) }
+        else { RichText.write(value, styled: styled, to: .general) }
         let id = UUID(); toastID = id; toast = "已复制"
         Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if toastID == id { toast = "" } }
     }
@@ -356,7 +380,7 @@ final class AppModel: ObservableObject {
         readingTranslation = false; readingPresentation = presentation
         error = ""; recoverySettingsTab = nil
         defer { if !speaking && !error.isEmpty { readingStatus = error } }
-        let text = (override ?? englishText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = MarkdownDocument(override ?? englishText).plain.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { error = "请先翻译中文，再朗读英文译文。"; return }
         guard text.count <= 6000 else { error = "朗读内容过长，请缩短后再试。"; return }
         guard !runtime.installing else { error = "本地朗读环境正在准备，完成后即可朗读。"; return }

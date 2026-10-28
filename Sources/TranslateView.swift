@@ -79,7 +79,7 @@ struct TranslateView: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 LText("原文").font(.system(size: 11, weight: .medium))
-                Text(SourceRecall.summary(model.source)).font(.system(size: 11))
+                Text(SourceRecall.summary(model.sourceDisplay)).font(.system(size: 11))
                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up").font(.system(size: 10, weight: .medium))
@@ -108,8 +108,8 @@ struct TranslateView: View {
             }
             Menu {
                 Button(L10n.text("粘贴并翻译")) {
-                    if let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        model.setSource(text, attributed: RichText.fromPasteboard(.general)); model.translate()
+                    if let text = MarkdownClipboard.read(.general), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        model.setSource(text); model.translate()
                     }
                 }
                 Button(L10n.text("截图翻译 " + model.ocrShortcut.label)) { model.startOCR?() }
@@ -149,7 +149,8 @@ struct TranslateView: View {
                 if !hasSource {
                     LText(model.ocrRecognizing ? "正在识别选区文字…" : "选中文字，或在这里输入…").font(.system(size: 13, weight: .regular)).foregroundStyle(.tertiary).padding(.top, 1).allowsHitTesting(false)
                 }
-                TranslationEditor(text: Binding(get: { model.source }, set: { model.editSource($0) }), height: $sourceHeight, focusRequest: focusRequest,
+                TranslationEditor(text: Binding(get: { model.sourceDisplay }, set: { model.editSourceDisplay($0) }), height: $sourceHeight, focusRequest: focusRequest,
+                    markdownBacking: model.source, onMarkdownPaste: { model.pasteSourceMarkdown($0, range: $1) },
                     styledText: nil, onAttributedChange: { _ in model.invalidateTranslationWork() },
                     onSelection: { model.onLocalSelection?($0, $1, $2) })
                     .frame(height: sourceHeight)
@@ -214,11 +215,7 @@ struct TranslateView: View {
                 if let word = model.word {
                     dictionary(word)
                 } else if !model.result.isEmpty {
-                    Group {
-                        if let rich = model.resultAttributed, rich.string == model.result {
-                            RichResultView(value: rich)
-                        } else { MarkdownResultView(markdown: model.result) }
-                    }.textSelection(.enabled)
+                    PlainMarkdownResultView(markdown: model.result).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.error.isEmpty && model.ocrRecognizing {
                     LText("正在本机识别文字，随后自动翻译…")
@@ -312,6 +309,8 @@ struct TranslationEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var height: CGFloat
     var focusRequest: Int
+    var markdownBacking: String? = nil
+    var onMarkdownPaste: ((String, NSRange) -> Void)? = nil
     var styledText: NSAttributedString? = nil
     var onAttributedChange: (NSAttributedString?) -> Void = { _ in }
     var onSelection: (NSPoint, Int, Bool) -> Void
@@ -372,6 +371,7 @@ struct TranslationEditor: NSViewRepresentable {
         }
         editor.onCompositionEnded = { [weak coordinator = context.coordinator] view in coordinator?.commit(view) }
         editor.string = text
+        editor.markdownBacking = markdownBacking; editor.onMarkdownPaste = onMarkdownPaste
         editor.isEditable = true; editor.isSelectable = true
         editor.isRichText = false; editor.importsGraphics = false; editor.allowsUndo = true; editor.drawsBackground = false
         editor.font = .systemFont(ofSize: 15); editor.textColor = .labelColor; editor.insertionPointColor = .labelColor
@@ -391,6 +391,7 @@ struct TranslationEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.owner = self
         guard let editor = scroll.documentView as? NSTextView else { return }
+        if let native = editor as? TranslationTextView { native.markdownBacking = markdownBacking; native.onMarkdownPaste = onMarkdownPaste }
         context.coordinator.synchronize(editor)
         (editor as? ReadableRichTextView)?.refreshDisplayColors()
         (scroll as? ContentSizedTextScrollView)?.scheduleMeasurement()
@@ -457,11 +458,26 @@ class ReadableRichTextView: NSTextView {
 }
 
 final class TranslationTextView: ReadableRichTextView {
+    var markdownBacking: String?
+    var onMarkdownPaste: ((String, NSRange) -> Void)?
+    override func copy(_ sender: Any?) {
+        if let markdown = selectedMarkdown() { MarkdownClipboard.write(markdown, to: .general) }
+        else { super.copy(sender) }
+    }
+    func selectedMarkdown() -> String? {
+        guard let markdownBacking else { return nil }
+        let document = MarkdownDocument(markdownBacking)
+        guard document.plain == string else { return nil }
+        return document.fragment(selectedRange())
+    }
     override func paste(_ sender: Any?) { pasteMarkdown(from: .general) }
     func pasteMarkdown(from board: NSPasteboard) {
-        guard isEditable, let plain = board.string(forType: .string) else { return }
-        let markdown = MarkdownTranslation.importText(plain, styled: RichText.fromPasteboard(board))
-        insertText(markdown, replacementRange: selectedRange())
+        guard isEditable, let markdown = MarkdownClipboard.read(board) else { return }
+        let selection = selectedRange()
+        let document = MarkdownDocument(markdownBacking ?? string)
+        markdownBacking = document.replacing(selection, withMarkdown: markdown, entireDocument: true)
+        onMarkdownPaste?(markdown, selection)
+        insertText(MarkdownDocument(markdown).plain, replacementRange: selection)
     }
 
     var onSelectionEnded: ((NSPoint, Int, Bool) -> Void)?
@@ -601,35 +617,27 @@ private struct TranslationScrollAppearance: NSViewRepresentable {
 }
 
 
-struct MarkdownResultView: View {
+struct PlainMarkdownResultView: NSViewRepresentable {
     let markdown: String
-    private var rows: [(text: String, code: Bool, level: Int)] {
-        var fence: String?; var values: [(String, Bool, Int)] = []
-        for line in markdown.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
-                let marker = String(trimmed.prefix(3))
-                if fence == nil { fence = marker } else if fence == marker { fence = nil }
-                continue
-            }
-            let hashes = line.prefix(while: { $0 == "#" }).count
-            let heading = hashes > 0 && hashes <= 6 && line.dropFirst(hashes).hasPrefix(" ")
-            values.append((heading ? String(line.dropFirst(hashes + 1)) : line, fence != nil || line.hasPrefix("    "), heading ? hashes : 0))
-        }
-        return values
+    func makeNSView(context: Context) -> NSTextView {
+        let view = TranslationTextView()
+        view.isEditable = false; view.isSelectable = true; view.isRichText = false
+        view.drawsBackground = false; view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.isHorizontallyResizable = false; view.isVerticallyResizable = true
+        view.textContainer?.widthTracksTextView = false
+        return view
     }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                if row.code {
-                    Text(row.text.isEmpty ? " " : row.text).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
-                } else {
-                    Text((try? AttributedString(markdown: row.text.isEmpty ? " " : row.text,
-                        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(row.text))
-                        .font(.system(size: row.level > 0 ? CGFloat(max(17, 26 - row.level * 2)) : 15, weight: row.level > 0 ? .bold : .regular))
-                        .foregroundStyle(.primary).textSelection(.enabled)
-                }
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+    func updateNSView(_ view: NSTextView, context: Context) {
+        let value = MarkdownDocument(markdown).plain
+        if view.string != value { view.string = value }
+        view.font = .systemFont(ofSize: 15); view.textColor = .labelColor
+        (view as? TranslationTextView)?.markdownBacking = markdown
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width > 0, let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
+        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        return CGSize(width: width, height: ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY)))
     }
 }

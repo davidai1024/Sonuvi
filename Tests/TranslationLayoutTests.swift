@@ -70,16 +70,22 @@ func runTranslationLayoutTests() async {
         snapshot(hosting, appearance == .aqua ? "light-narrow" : "dark-narrow")
         check(descendants(hosting).compactMap { $0 as? NSScrollView }.allSatisfy { $0.verticalScroller is TranslationScroller }, "Thin scrollbars survive appearance and width changes")
     }
-    let paragraph = NSMutableParagraphStyle(); paragraph.paragraphSpacing = 18
-    let styled = NSAttributedString(string: "Title\nSecond paragraph", attributes: [.font: NSFont.boldSystemFont(ofSize: 20), .paragraphStyle: paragraph])
-    model.result = styled.string; model.resultAttributed = styled
+    model.setSource("# Source title\n**Bold** [link](https://example.com)")
+    model.result = "# 译文标题\n**加粗** [链接](https://example.com)"
     try? await Task.sleep(nanoseconds: 300_000_000); hosting.layoutSubtreeIfNeeded()
-    let richResult = descendants(hosting).compactMap { $0 as? NSTextView }.first { !$0.isEditable && $0.string == styled.string }
-    check(richResult != nil, "Rich translation uses selectable native text rendering")
-    check((richResult?.textStorage?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.paragraphSpacing == 18,
-          "Rich translation rendering retains document paragraph spacing")
-    check((richResult?.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == 20,
-          "Rich translation rendering retains document font size")
+    let nativeViews = descendants(hosting).compactMap { $0 as? TranslationTextView }
+    let plainResult = nativeViews.first { !$0.isEditable && $0.string == "译文标题\n加粗 链接" }
+    let plainSource = nativeViews.first { $0.isEditable && $0.string == "Source title\nBold link" }
+    check(plainResult != nil && plainSource != nil, "Both source and result show plain text without Markdown syntax")
+    check(plainResult?.markdownBacking == model.result && plainSource?.markdownBacking == model.source, "Both native views retain the original Markdown behind display")
+    check(plainResult?.font?.pointSize == 15 && plainSource?.font?.pointSize == 15 && plainResult?.isRichText == false && plainSource?.isRichText == false,
+          "Complex source and result use a uniform plain-text font")
+    for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+        hosting.appearance = NSAppearance(named: appearance)
+        hosting.layoutSubtreeIfNeeded()
+        check(plainSource?.textColor == .labelColor && plainResult?.textColor == .labelColor, "Both plain displays retain dynamic label colors in light and dark appearance")
+        snapshot(hosting, appearance == .aqua ? "plain-markdown-light" : "plain-markdown-dark")
+    }
     let contrast = ReadableRichTextView()
     contrast.appearance = NSAppearance(named: .darkAqua)
     contrast.textStorage?.setAttributedString(NSAttributedString(string: "Black text", attributes: [.foregroundColor: NSColor.black]))
