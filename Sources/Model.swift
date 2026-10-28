@@ -230,8 +230,8 @@ final class AppModel: ObservableObject {
         }
     }
     func setSource(_ text: String, app: String? = nil, attributed: NSAttributedString? = nil) {
-        cancel(); stopSpeaking(); source = text
-        sourceAttributed = attributed?.string == text ? attributed : nil
+        cancel(); stopSpeaking(); source = MarkdownTranslation.importText(text, styled: attributed)
+        sourceAttributed = nil
         invalidateTranslationWork()
         resultAttributed = nil
         sourceApp = app
@@ -273,7 +273,7 @@ final class AppModel: ObservableObject {
         let dir = direction
         let name = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = name.isEmpty ? "deepseek-flash" : name
-        let cacheKey = "literal-v2|\(model)|\(dir.rawValue)|\(kind.rawValue)|\(text)"
+        let cacheKey = "markdown-v1|\(model)|\(dir.rawValue)|\(kind.rawValue)|\(text)"
         if translationWorkKey != cacheKey {
             translationWorkKey = cacheKey; translationWork = kind == .word ? nil : TranslationWork(text, attributed: sourceAttributed)
         }

@@ -84,6 +84,25 @@ func runLongTranslationTests() async {
     let pastedRich = RichText.fromPasteboard(richBoard)
     check(pastedRich?.string == richOutput && (pastedRich?.attribute(.font, at: boldRange.location, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
           "Rich clipboard round-trip retains translated text and inline bold")
+    let wordStyle = NSMutableAttributedString(string: "Title\r\nBold\r", attributes: [.font: NSFont.systemFont(ofSize: 14)])
+    wordStyle.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: (wordStyle.string as NSString).range(of: "Bold"))
+    let aligned = RichText.aligned(wordStyle, to: "Title\nBold")
+    check(aligned?.string == "Title\nBold" && (aligned?.attribute(.font, at: 6, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true,
+          "Word line-ending differences and terminal paragraph mark preserve bold")
+    check(RichText.aligned(wordStyle, to: "Title\nOther") == nil, "Unrelated clipboard content is never treated as the selected text")
+    let wordBoard = NSPasteboard.withUniqueName(); defer { wordBoard.releaseGlobally() }
+    let wordItem = NSPasteboardItem(); wordItem.setString("Title\nBold", forType: .string)
+    let wordData = try! wordStyle.data(from: NSRange(location: 0, length: wordStyle.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+    wordItem.setData(wordData, forType: .rtf); wordBoard.writeObjects([wordItem])
+    check(RichText.fromPasteboard(wordBoard)?.string == "Title\nBold", "Clipboard import reconciles Word-style text and RTF representations")
+    let wordEditor = TranslationTextView(); wordEditor.isEditable = true; wordEditor.isRichText = false
+    wordEditor.textColor = .labelColor
+    wordEditor.pasteMarkdown(from: richBoard)
+    check(wordEditor.string == MarkdownTranslation.importText(richOutput, styled: pastedRich), "Native paste converts rich clipboard into editable Markdown")
+    check(wordEditor.string.contains("## Heading") && wordEditor.string.contains("**bold**"), "Native paste retains heading and emphasis as Markdown")
+    let importedModel = AppModel(); importedModel.previewMode = true
+    importedModel.setSource(richOutput, attributed: pastedRich)
+    check(importedModel.source == wordEditor.string && importedModel.sourceAttributed == nil, "Selection import and native paste produce identical Markdown without document colors")
     var editorText = ""; var editorRich: NSAttributedString?
     let editorSpec = TranslationEditor(text: Binding(get: { editorText }, set: { editorText = $0 }),
         height: .constant(40), focusRequest: 0, onAttributedChange: { editorRich = $0 }, onSelection: { _,_,_ in })

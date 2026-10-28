@@ -1104,6 +1104,7 @@ else if CommandLine.arguments.contains("--window-interaction-test") { MainActor.
 else if CommandLine.arguments.contains("--menu-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; RunLoop.main.perform { MainActor.assumeIsolated { runMenuCaptureTest() } }; app.run() } }
 else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await runOCRPipelineTest(); exit(0) }; dispatchMain() }
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
+else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--network-test") { Task { await runNetworkTests(); exit(0) }; dispatchMain() }
 else {

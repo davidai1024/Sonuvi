@@ -80,6 +80,17 @@ func runTranslationLayoutTests() async {
           "Rich translation rendering retains document paragraph spacing")
     check((richResult?.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize == 20,
           "Rich translation rendering retains document font size")
+    let contrast = ReadableRichTextView()
+    contrast.appearance = NSAppearance(named: .darkAqua)
+    contrast.textStorage?.setAttributedString(NSAttributedString(string: "Black text", attributes: [.foregroundColor: NSColor.black]))
+    contrast.refreshDisplayColors()
+    check((contrast.layoutManager?.temporaryAttribute(.foregroundColor, atCharacterIndex: 0, effectiveRange: nil) as? NSColor) == NSColor.labelColor,
+          "Black document text is readable in dark appearance")
+    check((contrast.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor) == NSColor.black,
+          "Appearance adjustment leaves original document color unchanged")
+    contrast.appearance = NSAppearance(named: .aqua); contrast.refreshDisplayColors()
+    check(contrast.layoutManager?.temporaryAttribute(.foregroundColor, atCharacterIndex: 0, effectiveRange: nil) == nil,
+          "Original black text displays in light appearance")
     window.close()
     print("PASS: \(count) translation layout checks")
 }
