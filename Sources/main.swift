@@ -532,7 +532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func translateClipboard() {
         if needsOnboarding || onboardingVisible { showOnboarding(); return }
         guard let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { model.error = "剪贴板中没有可翻译的文字。"; showWindow(); return }
-        model.setSource(text); showWindow(); model.translate()
+        model.setSource(text, attributed: RichText.fromPasteboard(.general)); showWindow(); model.translate()
     }
     func applicationWillTerminate(_ notification: Notification) {
         browserServer.stop()
@@ -810,7 +810,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 else { self.showWindow() }; return
             }
             guard !Task.isCancelled, self.captureID == id else { return }
-            self.model.setSource(text, app: sourceApp)
+            let styled: NSAttributedString?
+            if !read, localText == nil, let pid = originApplication?.processIdentifier {
+                let copied = self.model.clipboardFallback ? await SelectionReader.copiedAttributedSelection(pid: pid, matching: text) : nil
+                if let copied { styled = copied }
+                else { styled = await SelectionReader.attributedSelection(pid: pid, matching: text) }
+            } else { styled = nil }
+            guard !Task.isCancelled, self.captureID == id,
+                  localText != nil || NSWorkspace.shared.frontmostApplication?.processIdentifier == originApplication?.processIdentifier else { return }
+            self.model.setSource(text, app: sourceApp, attributed: styled)
             if read {
                 self.bubble?.orderOut(nil); self.readingBar.anchor = point
                 if TextRules.direction(text) == .toChinese { self.model.speak(text, presentation: localText == nil ? .floating : .inline) }
@@ -885,7 +893,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dismissSelectionBubble()
     }
     func useSelection(_ text: String, app: String? = nil, readAfter: Bool = false) {
-        dismissSelectionBubble(); captureTask?.cancel(); model.setSource(text, app: app); presentWindow(near: NSEvent.mouseLocation); model.translate()
+        dismissSelectionBubble(); captureTask?.cancel(); captureID = UUID(); let id = captureID
+        let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let point = NSEvent.mouseLocation
+        captureTask = Task { [weak self] in
+            guard let self else { return }
+            var styled: NSAttributedString?
+            if let pid {
+                if self.model.clipboardFallback { styled = await SelectionReader.copiedAttributedSelection(pid: pid, matching: text) }
+                if styled == nil { styled = await SelectionReader.attributedSelection(pid: pid, matching: text) }
+            }
+            guard !Task.isCancelled, self.captureID == id,
+                  pid == nil || NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+            self.model.setSource(text, app: app, attributed: styled)
+            self.presentWindow(near: point); self.model.translate()
+        }
     }
     func allowsSelectionLookup(pid: pid_t) -> Bool {
         guard !model.ocrBusy, !needsOnboarding, !onboardingVisible, model.mouseLookup,
