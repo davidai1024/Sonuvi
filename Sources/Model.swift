@@ -253,8 +253,8 @@ final class AppModel: ObservableObject {
             }
         }
         result = ""; word = nil; error = ""; recoverySettingsTab = nil; statusText = ""
-        let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { error = "请先划选或输入文字。"; return }
+        let text = effectiveKind == .word ? source.trimmingCharacters(in: .whitespacesAndNewlines) : source
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "请先划选或输入文字。"; return }
         guard text.count <= TextLimits.characters else { error = "单次最多支持 20 万字符，请分批翻译。"; return }
         let key: String
         do { key = try KeyStore.read(); hasKey = true; keyAccessRequired = false; keyAccessIssue = "" }

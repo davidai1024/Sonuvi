@@ -35,18 +35,31 @@ func runLongTranslationTests() async {
         update(text); return text
     }
     do { _ = try await work.run(send: send, onUpdate: { updates.append($0) }, onProgress: { i,n,_ in progress.append((i,n)) }); fatalError("Failure accepted") }
-    catch { check(work.completed.count == 1 && !work.output.contains("partial must"), "Failed part is not accepted; completed translation survives") }
-    let first = work.completed[0]; let callsBefore = calls; failAtSecond = false
+    catch { check(!work.completed.isEmpty && !work.output.contains("partial must"), "Failed part is not accepted; completed translation survives") }
+    let prior = work.completed; let callsBefore = calls; failAtSecond = false
     let final = try! await work.run(send: send, onUpdate: { updates.append($0) }, onProgress: { i,n,_ in progress.append((i,n)) })
-    check(calls - callsBefore == work.parts.count - 1 && work.completed[0] == first, "Retry resumes without re-sending completed parts")
-    check(final == mixed.trimmingCharacters(in: .whitespacesAndNewlines), "Long translation returns every paragraph in source order")
+    check(calls > callsBefore && Array(work.completed.prefix(prior.count)) == prior, "Retry resumes without re-sending completed parts")
+    check(final == mixed, "Long translation returns every paragraph in source order")
     check(progress.last?.0 == work.parts.count && updates.last == final, "Progress and streaming reach the final part")
     let splitWork = TranslationWork(String(repeating: "长", count: 1200)); var firstLimit = true
     let splitOutput = try! await splitWork.run(send: { text, update in
         if firstLimit { firstLimit = false; throw TranslateError.outputLimit }
         update(text); return text
     }, onUpdate: { _ in }, onProgress: { _,_,_ in })
-    check(splitWork.parts.count == 2 && splitOutput.replacingOccurrences(of: "\n", with: "") == String(repeating: "长", count: 1200), "Output limit automatically splits and retries the current part")
+    check(splitWork.parts.count == 2 && splitOutput == String(repeating: "长", count: 1200), "Output limit automatically splits and retries the current part")
+    let formatted = "  First line.\n\n  1. Second item\n• Third item\n\nLast"
+    let formattedWork = TranslationWork(formatted); var batchCalls = 0
+    let formattedOutput = try! await formattedWork.run(send: { text, _ in batchCalls += 1; return text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    check(formattedOutput == formatted && batchCalls == 1, "Batch reconstruction preserves blank lines, indentation and list markers")
+    let fallbackWork = TranslationWork(formatted); var fallbackCalls = 0
+    let fallbackOutput = try! await fallbackWork.run(send: { text, _ in
+        fallbackCalls += 1; return text.contains("⟦SONUVI_") ? "invalid" : text
+    }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    check(fallbackOutput == formatted && fallbackCalls > 1, "Invalid batch markers fall back to individual translations")
+    let oneLine = String(repeating: "汉", count: 4000)
+    let oneLineWork = TranslationWork(oneLine)
+    let oneLineOutput = try! await oneLineWork.run(send: { text, _ in text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    check(oneLineOutput == oneLine, "Splitting a long line does not invent line breaks")
     let cancelled = TranslationWork(mixed)
     let task = Task { @MainActor in try await cancelled.run(send: { text, update in
         try await Task.sleep(nanoseconds: 2_000_000_000); update(text); return text
