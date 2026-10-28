@@ -13,6 +13,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Select macOS 26 SDK
+        shell: bash
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort -V | tail -1)"
+          test -n "$XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
       - name: Prepare verified Sparkle
         run: python3 Tools/prepare_sparkle.py
       - name: Compile application and tests
