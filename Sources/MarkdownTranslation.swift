@@ -84,17 +84,32 @@ enum MarkdownTranslation {
     static func importText(_ text: String, styled: NSAttributedString?) -> String {
         guard let styled, styled.string == text else { return text }
         // Existing Markdown must remain byte-for-byte editable.
-        if text.range(of: #"(?m)^\s*(?:#{1,6} |```|~~~|> |[-*+] |\d+[.)] )|\*\*|\[[^\]]+\]\("#, options: .regularExpression) != nil { return text }
+        if text.range(of: #"(?m)^\s*(?:#{1,6} |```|~~~|> )|\*\*|\[[^\]]+\]\("#, options: .regularExpression) != nil { return text }
         var output = ""
+        var regularSizes: [CGFloat] = []
+        styled.enumerateAttribute(.font, in: NSRange(location: 0, length: styled.length)) { value, _, _ in
+            if let font = value as? NSFont, !font.fontDescriptor.symbolicTraits.contains(.bold) { regularSizes.append(font.pointSize) }
+        }
+        regularSizes.sort()
+        let baseline = regularSizes.isEmpty ? CGFloat(12) : regularSizes[regularSizes.count / 2]
         let ns = text as NSString
         var offset = 0
         for line in text.components(separatedBy: "\n") {
             let range = NSRange(location: offset, length: (line as NSString).length)
             if range.length > 0 {
                 let font = styled.attribute(.font, at: offset, effectiveRange: nil) as? NSFont
-                let isHeading = (font?.pointSize ?? 0) >= 20 && (font?.fontDescriptor.symbolicTraits.contains(.bold) ?? false)
+                let listPrefix = line.range(of: #"^[ \t]*(?:[-+*•]|[0-9]+[.)、])[ \t]+"#, options: .regularExpression)
+                var fullyBold = true
+                styled.enumerateAttribute(.font, in: range) { value, span, _ in
+                    let piece = ns.substring(with: span).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !piece.isEmpty && (value as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) != true { fullyBold = false }
+                }
+                let isHeading = listPrefix == nil && fullyBold && (font?.pointSize ?? 0) >= max(15, baseline * 1.25)
                 if isHeading { output += "## " }
-                styled.enumerateAttributes(in: range) { attrs, span, _ in
+                let prefixLength = listPrefix.map { (String(line[$0]) as NSString).length } ?? 0
+                if prefixLength > 0 { output += ns.substring(with: NSRange(location: offset, length: prefixLength)) }
+                let bodyRange = NSRange(location: offset + prefixLength, length: range.length - prefixLength)
+                styled.enumerateAttributes(in: bodyRange) { attrs, span, _ in
                     let value = ns.substring(with: span)
                     let leading = String(value.prefix(while: { $0.isWhitespace }))
                     let rest = String(value.dropFirst(leading.count))

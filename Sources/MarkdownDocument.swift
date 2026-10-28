@@ -141,7 +141,11 @@ enum MarkdownClipboard {
     }
     static func write(_ markdown: String, to board: NSPasteboard) {
         let item = NSPasteboardItem()
-        item.setString(MarkdownDocument(markdown).plain, forType: .string)
+        item.setString(markdown, forType: .string)
+        let rich = MarkdownRichExport.render(markdown)
+        if let rtf = try? rich.data(from: NSRange(location: 0, length: rich.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]) {
+            item.setData(rtf, forType: .rtf)
+        }
         item.setString(markdown, forType: backingType); item.setString(markdown, forType: markdownType)
         board.clearContents(); board.writeObjects([item])
     }
