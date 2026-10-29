@@ -36,12 +36,24 @@ func runLongTranslationTests() async {
         update(text); return text
     }
     do { _ = try await work.run(send: send, onUpdate: { updates.append($0) }, onProgress: { i,n,_ in progress.append((i,n)) }); fatalError("Failure accepted") }
-    catch { check(!work.completed.isEmpty && !work.output.contains("partial must"), "Failed part is not accepted; completed translation survives") }
-    let prior = work.completed; let callsBefore = calls; failAtSecond = false
+    catch { check(!work.output.isEmpty && !work.output.contains("partial must"), "Failed part is not accepted; completed translation survives") }
+    let prior = work.output; let callsBefore = calls; failAtSecond = false
     let final = try! await work.run(send: send, onUpdate: { updates.append($0) }, onProgress: { i,n,_ in progress.append((i,n)) })
-    check(calls > callsBefore && Array(work.completed.prefix(prior.count)) == prior, "Retry resumes without re-sending completed parts")
+    check(calls > callsBefore && work.output.hasPrefix(prior), "Retry resumes without re-sending completed parts")
     check(final == mixed, "Long translation returns every paragraph in source order")
-    check(progress.last?.0 == work.parts.count && updates.last == final, "Progress and streaming reach the final part")
+    check(progress.last?.0 == progress.last?.1 && updates.last == final, "Progress and streaming reach the final part")
+    let large = String(repeating: "A complete paragraph with context.\n\n", count: 400)
+    var largeCalls = 0
+    let largeOutput = try! await TranslationWork(large).run(send: { text, _ in largeCalls += 1; return text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    check(largeOutput == large && largeCalls <= 4, "Long text is translated in large complete chunks")
+    let previewSource = "First paragraph.\n\nSecond paragraph."
+    let previewWork = TranslationWork(previewSource); var previewCalls = 0; var previewUpdates: [String] = []
+    let previewResult = try! await previewWork.run(send: { text, update in
+        previewCalls += 1
+        if previewCalls == 1 { update("preliminary translation"); return "invalid" }
+        return text
+    }, onUpdate: { previewUpdates.append($0) }, onProgress: { _,_,_ in })
+    check(previewResult == previewSource && previewUpdates.first == "preliminary translation" && !previewUpdates.contains(""), "Fallback keeps the visible translation until the replacement is ready")
     let splitWork = TranslationWork(String(repeating: "长", count: 1200)); var firstLimit = true
     let splitOutput = try! await splitWork.run(send: { text, update in
         if firstLimit { firstLimit = false; throw TranslateError.outputLimit }
@@ -54,9 +66,13 @@ func runLongTranslationTests() async {
     check(formattedOutput == formatted && batchCalls == 1, "Batch reconstruction preserves blank lines, indentation and list markers")
     let fallbackWork = TranslationWork(formatted); var fallbackCalls = 0
     let fallbackOutput = try! await fallbackWork.run(send: { text, _ in
-        fallbackCalls += 1; return text.contains("⟦SONUVI_") ? "invalid" : text
+        fallbackCalls += 1; return fallbackCalls == 1 || text.contains("⟦SONUVI_") ? "invalid" : text
     }, onUpdate: { _ in }, onProgress: { _,_,_ in })
     check(fallbackOutput == formatted && fallbackCalls > 1, "Invalid batch markers fall back to individual translations")
+    let manyLines = (0..<28).map { "Item \($0): check the release." }.joined(separator: "\n")
+    let fastWork = TranslationWork(manyLines); var fastCalls = 0
+    let fastOutput = try! await fastWork.run(send: { text, _ in fastCalls += 1; return text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    check(fastOutput == manyLines && fastCalls == 1, "Short multi-part document is sent in one batch")
     let oneLine = String(repeating: "汉", count: 4000)
     let oneLineWork = TranslationWork(oneLine)
     let oneLineOutput = try! await oneLineWork.run(send: { text, _ in text }, onUpdate: { _ in }, onProgress: { _,_,_ in })
