@@ -3,6 +3,47 @@ import AppKit
 
 // Markdown syntax is owned by the client, never reconstructed by the model.
 enum MarkdownTranslation {
+    // CommonMark treats emphasis adjacent to CJK text and opening/closing
+    // quotation punctuation as literal asterisks. Separate the delimiters
+    // from surrounding words so document editors render the intended bold.
+    static func normalizeQuotedEmphasis(_ value: String) -> String {
+        var fence: Character?
+        return value.components(separatedBy: "\n").map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                let marker = trimmed.first!
+                if fence == nil { fence = marker } else if fence == marker { fence = nil }
+                return line
+            }
+            guard fence == nil else { return line }
+            return line.replacingOccurrences(of: #"(?<=\p{L})\*\*(?=[“‘「『])"#, with: " **", options: .regularExpression)
+                .replacingOccurrences(of: #"(?<=[”’」』])\*\*(?=\p{L})"#, with: "** ", options: .regularExpression)
+        }.joined(separator: "\n")
+    }
+    // Reject a whole-document response when it changes protected Markdown.
+    // Exact code and destinations are checked in addition to block structure.
+    static func compatible(_ source: String, _ translated: String) -> Bool {
+        func matches(_ value: String, _ pattern: String) -> [String] {
+            let regex = try! NSRegularExpression(pattern: pattern, options: [])
+            let ns = value as NSString
+            return regex.matches(in: value, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) }
+        }
+        let protected = [#"(?ms)^\s*(```|~~~)[^\n]*\n.*?^\s*\1[ \t]*$"#, #"`+[^`\n]+`+"#, #"\]\([^\n)]*\)"#]
+        guard protected.allSatisfy({ matches(source, $0) == matches(translated, $0) }) else { return false }
+        let sourceLines = source.components(separatedBy: "\n")
+        let translatedLines = translated.components(separatedBy: "\n")
+        guard sourceLines.count == translatedLines.count else { return false }
+        let prefix = #"^[ \t]*(?:>[ \t]*)*(?:(?:#{1,6}[ \t]+)|(?:[-+*]|[0-9]+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?"#
+        for (a, b) in zip(sourceLines, translatedLines) {
+            if matches(a, prefix) != matches(b, prefix) { return false }
+            if a.filter({ $0 == "|" }).count != b.filter({ $0 == "|" }).count { return false }
+            if a.trimmingCharacters(in: .whitespaces).isEmpty != b.trimmingCharacters(in: .whitespaces).isEmpty { return false }
+        }
+        for marker in ["**", "~~", "__", "["] {
+            if source.components(separatedBy: marker).count != translated.components(separatedBy: marker).count { return false }
+        }
+        return true
+    }
     static func escapeTranslation(_ value: String) -> String {
         value.reduce(into: "") { output, character in
             if "\\*_~[]`|<>#!".contains(character) { output.append("\\") }
@@ -20,7 +61,13 @@ enum MarkdownTranslation {
             let leading = String(value.prefix(while: { $0.isWhitespace }))
             literal(leading)
             let body = String(value.dropFirst(leading.count))
-            result += TranslationPart.split(body)
+            // Punctuation and numeric-only cells have no translatable words.
+            // Keeping them locally avoids extra requests and marker failures.
+            if !body.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) {
+                literal(body)
+            } else {
+                result += TranslationPart.split(body)
+            }
         }
         var fence: Character?; var fenceLength = 0
         let lines = source.components(separatedBy: "\n")

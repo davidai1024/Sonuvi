@@ -27,15 +27,20 @@ func runMarkdownTranslationTests() async {
         requests.append(value); return value.replacingOccurrences(of: "Hello", with: "你好").replacingOccurrences(of: "World", with: "世界")
     }, onUpdate: { _ in }, onProgress: { _,_,_ in })
     check(translated == "# 你好\n\n**世界** [你好](https://example.com)\n```\nHello World\n```\n", "Actual changed text retains headings, emphasis, links and code")
-    check(requests.allSatisfy { !$0.contains("https://") && !$0.contains("```") && !$0.contains("Hello World") }, "Destinations and code never reach the translation model")
+    check(requests.count > 1 && requests.dropFirst().allSatisfy { !$0.contains("https://") && !$0.contains("```") && !$0.contains("Hello World") }, "Changed code rejects the whole response and falls back to protected fragments")
     let complex = "# Checklist\n\n1. **Prepare**\n   - Check [help](https://example.com/help)\n\n> **Important:** Pause.\n\n| Metric | Target |\n| --- | --- |\n| Time | 3 seconds |\n\n```json\n{\n  \"launch_enabled\": true,\n  \"retry_count\": 3\n}\n```\n\nReview after launch."
     let complexResult = try! await TranslationWork(complex).run(send: { value, _ in
         value.replacingOccurrences(of: "Review after launch", with: "发布后复核").replacingOccurrences(of: "Metric", with: "指标")
     }, onUpdate: { _ in }, onProgress: { _,_,_ in })
     check(complexResult.contains("| 指标 | Target |\n| --- | --- |\n| Time | 3 seconds |") && complexResult.contains("```json\n{\n  \"launch_enabled\": true,\n  \"retry_count\": 3\n}\n```") && complexResult.contains("发布后复核") && complexResult.contains("   - Check [help](https://example.com/help)"), "Translation preserves nested lists, table structure and code while translating text after code")
     let fullCase = ComplexSelectionFixture.source
-    let fullResult = try! await TranslationWork(fullCase).run(send: { value, _ in value.replacingOccurrences(of: "After launch", with: "发布后") }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+    var wholeCalls = 0
+    let fullResult = try! await TranslationWork(fullCase).run(send: { value, _ in wholeCalls += 1; return value.replacingOccurrences(of: "After launch", with: "发布后") }, onUpdate: { _ in }, onProgress: { _,_,_ in })
     check(fullResult == fullCase.replacingOccurrences(of: "After launch", with: "发布后"), "Full complex case preserves all syntax and translates the final paragraph")
+    check(wholeCalls == 1, "A complete short Markdown document is translated in one request")
+    check(!MarkdownTranslation.compatible(fullCase, fullCase.replacingOccurrences(of: "https://example.com/help", with: "https://wrong.example")), "Whole response rejects altered links")
+    let quoted = "一个标注为**“创建你的项目”**的操作。\n```\n例子**“不变”**内容\n```"
+    check(MarkdownTranslation.normalizeQuotedEmphasis(quoted) == "一个标注为 **“创建你的项目”** 的操作。\n```\n例子**“不变”**内容\n```", "Chinese quoted emphasis renders without changing fenced code")
     check(MarkdownTranslation.escapeTranslation("**new** [x]") == "\\*\\*new\\*\\* \\[x\\]", "Generated formatting cannot change the source structure")
     let word = NSMutableAttributedString(string: "Title\nBold text", attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.black])
     word.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 22), range: NSRange(location: 0, length: 5))

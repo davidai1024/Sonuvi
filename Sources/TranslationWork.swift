@@ -46,9 +46,16 @@ struct TranslationPart {
 final class TranslationWork {
     private(set) var parts: [TranslationPart]
     private(set) var completed: [String] = []
-    private var batchEnabled = true
+    private var batchLimit = 32
     private let leading: String
-    var output: String { prefix }
+    private let source: String
+    private var wholeOutput: String?
+    private var wholeAttempted = false
+    private var longChunks: [String]?
+    private var longIndex = 0
+    private var longCompleted = ""
+    private var longWork: TranslationWork?
+    var output: String { wholeOutput ?? (longChunks == nil ? prefix : longCompleted + (longWork?.output ?? "")) }
     var prefix: String { completed.isEmpty ? "" : leading + completed.enumerated().map { $0.element + parts[$0.offset].separator }.joined() }
     var attributedOutput: NSAttributedString? {
         guard hasStyles, !completed.isEmpty else { return nil }
@@ -59,7 +66,33 @@ final class TranslationWork {
         return result
     }
     private let hasStyles: Bool
+    // Split only at complete lines outside code fences. A single oversized
+    // plain line is split at natural boundaries; oversized Markdown blocks
+    // fall back to the original protected-fragment path.
+    static func documentChunks(_ text: String, maximum: Int = 5000) -> [String]? {
+        var result: [String] = []; var pending = ""; var fence: Character?
+        let lines = text.components(separatedBy: "\n")
+        for (index, line) in lines.enumerated() {
+            let unit = line + (index + 1 < lines.count ? "\n" : "")
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let marker = trimmed.hasPrefix("```") ? Character("`") : (trimmed.hasPrefix("~~~") ? Character("~") : nil)
+            if fence == nil && pending.count + unit.count > maximum && !pending.isEmpty {
+                result.append(pending); pending = ""
+            }
+            pending += unit
+            if let marker { if fence == nil { fence = marker } else if fence == marker { fence = nil } }
+            if pending.count > maximum && fence == nil {
+                guard !pending.contains("```") && !pending.contains("~~~"), pending.range(of: #"[*_\[\]`|]"#, options: .regularExpression) == nil else { return nil }
+                let pieces = TranslationPart.split(pending, maximum: maximum)
+                result += pieces.map { $0.text + $0.separator }; pending = ""
+            }
+        }
+        if !pending.isEmpty { result.append(pending) }
+        guard fence == nil, result.joined() == text else { return nil }
+        return result
+    }
     init(_ text: String, attributed: NSAttributedString? = nil) {
+        source = text
         leading = attributed == nil ? "" : String(text.prefix(while: { $0.isWhitespace }))
         parts = attributed == nil ? MarkdownTranslation.parts(String(text.dropFirst(leading.count))) : TranslationPart.split(String(text.dropFirst(leading.count)))
         hasStyles = attributed?.string == text && attributed?.length != 0
@@ -96,14 +129,65 @@ final class TranslationWork {
     func run(send: (String, @escaping @MainActor (String) -> Void) async throws -> String,
              onUpdate: @escaping @MainActor (String) -> Void,
              onProgress: @escaping @MainActor (Int, Int, Bool) -> Void) async throws -> String {
+        var holdPreview = false
+        func publish(_ value: String) { if !holdPreview { onUpdate(value) } }
+        if let wholeOutput { return wholeOutput }
+        if !hasStyles && source.count > 5000 && longChunks == nil && longIndex == 0 {
+            if let chunks = Self.documentChunks(source), chunks.count > 1 { longChunks = chunks }
+        }
+        if let chunks = longChunks {
+            while longIndex < chunks.count {
+                try Task.checkCancellation()
+                let child = longWork ?? TranslationWork(chunks[longIndex]); longWork = child
+                let done = longCompleted; let current = longIndex
+                let value = try await child.run(send: send, onUpdate: { onUpdate(done + $0) }, onProgress: { _, _, retry in onProgress(current + 1, chunks.count, retry) })
+                longCompleted += value; longWork = nil; longIndex += 1
+                onUpdate(longCompleted); onProgress(longIndex, chunks.count, false)
+            }
+            return longCompleted
+        }
+        // Most documents fit comfortably in the output budget. Give the model
+        // complete sentences and context, then validate the Markdown before commit.
+        if !wholeAttempted && !hasStyles && parts.count > 1 && source.count <= 5000 && !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            wholeAttempted = true
+            onProgress(1, 1, false)
+            do {
+                var response = ""
+                for attempt in 0...1 {
+                    do { response = try await send(source) { partial in onUpdate(partial) }; break }
+                    catch TranslateError.retryable(let message) {
+                        guard attempt == 0 else { wholeAttempted = false; throw TranslateError.message(message) }
+                        onProgress(1, 1, true)
+                        try await Task.sleep(nanoseconds: 800_000_000)
+                        try Task.checkCancellation()
+                    }
+                }
+                let trailing = String(source.reversed().prefix(while: { $0.isNewline }).reversed())
+                let trimmedResponse = String(response.reversed().drop(while: { $0.isNewline }).reversed())
+                let value = MarkdownTranslation.normalizeQuotedEmphasis(trimmedResponse + trailing)
+                try Task.checkCancellation()
+                if MarkdownTranslation.compatible(source, value) {
+                    wholeOutput = value; onUpdate(value); onProgress(1, 1, false)
+                    return value
+                }
+                holdPreview = true
+            } catch TranslateError.outputLimit {
+                // A model-specific output limit can be lower than our budget.
+                // Discard the incomplete response and use the resumable path.
+                holdPreview = true
+            } catch {
+                wholeAttempted = false
+                throw error
+            }
+        }
         while completed.count < parts.count {
             try Task.checkCancellation()
             let index = completed.count
             var end = index
             var size = 0
-            while end < parts.count && end - index < (batchEnabled ? 16 : 1) {
-                let nextSize = parts[end].text.count + 80
-                if end > index && size + nextSize > 1800 { break }
+            while end < parts.count && end - index < batchLimit {
+                let nextSize = parts[end].text.count + 32
+                if end > index && size + nextSize > 3600 { break }
                 size += nextSize; end += 1
             }
             let group = Array(parts[index..<end])
@@ -111,12 +195,12 @@ final class TranslationWork {
             // Empty bodies (for example, a line containing only a bullet) are
             // handled individually, never sent as an empty translation request.
             if extracted[0].1.isEmpty {
-                completed.append(extracted[0].0); onUpdate(output); continue
+                completed.append(extracted[0].0); publish(output); continue
             }
             if extracted.contains(where: { $0.1.isEmpty }) { end = index + 1 }
             let batch = Array(parts[index..<end])
             let fields = batch.map { prefixAndBody($0.text) }
-            let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let nonce = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))
             let markers = fields.indices.map { "⟦SONUVI_\(nonce)_\($0)⟧" }
             let request = fields.count == 1 ? fields[0].1 : zip(markers, fields).map { $0 + $1.1 }.joined(separator: "\n")
             let before = completed.isEmpty ? leading : prefix
@@ -126,12 +210,12 @@ final class TranslationWork {
                 for attempt in 0...1 {
                     do {
                         translated = try await send(request) { value in
-                            if fields.count == 1 { onUpdate(before + fields[0].0 + value) }
+                            if fields.count == 1 { publish(before + fields[0].0 + value) }
                         }
                         break
                     } catch TranslateError.retryable(let message) {
                         guard attempt == 0 else { throw TranslateError.message(message) }
-                        onUpdate(self.output); onProgress(index + 1, self.parts.count, true)
+                        publish(self.output); onProgress(index + 1, self.parts.count, true)
                         try await Task.sleep(nanoseconds: 800_000_000)
                         try Task.checkCancellation()
                     }
@@ -147,16 +231,15 @@ final class TranslationWork {
                         let oneLine = trimmed.components(separatedBy: .newlines).joined(separator: " ")
                         completed.append(field.0 + (hasStyles ? oneLine : MarkdownTranslation.escapeTranslation(oneLine)))
                     }
-                    onUpdate(output); onProgress(completed.count, parts.count, false)
+                    publish(output); onProgress(completed.count, parts.count, false)
                 } else if fields.count > 1 {
-                    // If the model changes a marker, do not guess the alignment.
-                    // Re-run the first fragment on its own; subsequent fragments
-                    // are likewise processed without batching in this run.
-                    batchEnabled = false; onUpdate(output)
+                    // Never guess alignment: retry smaller batches, keeping the
+                    // remaining fragments batched instead of issuing one request per fragment.
+                    batchLimit = max(1, fields.count / 2); publish(output)
                 } else { throw TranslateError.message("模型未返回完整译文，请重试。") }
             } catch TranslateError.outputLimit {
                 if fields.count > 1 {
-                    batchEnabled = false; onUpdate(output)
+                    batchLimit = max(1, fields.count / 2); publish(output)
                 } else {
                     let part = parts[index]
                     guard part.text.count > 200 else { throw TranslateError.message("这段译文未能完整生成，请重试。") }
@@ -164,10 +247,11 @@ final class TranslationWork {
                     smaller = smaller.map { TranslationPart(text: $0.text, separator: $0.separator, attributes: part.attributes) }
                     if let last = smaller.popLast() { smaller.append(TranslationPart(text: last.text, separator: last.separator + part.separator, attributes: last.attributes)) }
                     parts.replaceSubrange(index...index, with: smaller)
-                    onUpdate(output)
+                    publish(output)
                 }
             }
         }
+        if holdPreview { onUpdate(output) }
         return output
     }
 
