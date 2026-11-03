@@ -152,16 +152,11 @@ final class TranslationWork {
             wholeAttempted = true
             onProgress(1, 1, false)
             do {
-                var response = ""
-                for attempt in 0...1 {
-                    do { response = try await send(source) { partial in onUpdate(partial) }; break }
-                    catch TranslateError.retryable(let message) {
-                        guard attempt == 0 else { wholeAttempted = false; throw TranslateError.message(message) }
-                        onProgress(1, 1, true)
-                        try await Task.sleep(nanoseconds: 800_000_000)
-                        try Task.checkCancellation()
-                    }
-                }
+                let response = try await TranslationRetry.run(onRetry: {
+                    onProgress(1, 1, true)
+                }, operation: {
+                    try await send(source) { partial in onUpdate(partial) }
+                })
                 let trailing = String(source.reversed().prefix(while: { $0.isNewline }).reversed())
                 let trimmedResponse = String(response.reversed().drop(while: { $0.isNewline }).reversed())
                 let value = MarkdownTranslation.normalizeQuotedEmphasis(trimmedResponse + trailing)
@@ -206,20 +201,13 @@ final class TranslationWork {
             let before = completed.isEmpty ? leading : prefix
             onProgress(index + 1, parts.count, false)
             do {
-                var translated = ""
-                for attempt in 0...1 {
-                    do {
-                        translated = try await send(request) { value in
-                            if fields.count == 1 { publish(before + fields[0].0 + value) }
-                        }
-                        break
-                    } catch TranslateError.retryable(let message) {
-                        guard attempt == 0 else { throw TranslateError.message(message) }
-                        publish(self.output); onProgress(index + 1, self.parts.count, true)
-                        try await Task.sleep(nanoseconds: 800_000_000)
-                        try Task.checkCancellation()
+                let translated = try await TranslationRetry.run(onRetry: {
+                    publish(self.output); onProgress(index + 1, self.parts.count, true)
+                }, operation: {
+                    try await send(request) { value in
+                        if fields.count == 1 { publish(before + fields[0].0 + value) }
                     }
-                }
+                })
                 try Task.checkCancellation()
                 let values: [String]?
                 if fields.count == 1 { values = [translated] }

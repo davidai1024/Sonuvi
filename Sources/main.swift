@@ -1108,6 +1108,7 @@ else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await run
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
 else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); runMarkdownDocumentTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--translation-connection-test") { Task { @MainActor in exit(await runTranslationConnectionTest()) }; dispatchMain() }
 else if CommandLine.arguments.contains("--network-test") { Task { await runNetworkTests(); exit(0) }; dispatchMain() }
 else {
     MainActor.assumeIsolated {

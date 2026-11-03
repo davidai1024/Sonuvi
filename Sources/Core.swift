@@ -64,9 +64,9 @@ struct WordResult: Codable {
 
 enum TranslateError: LocalizedError {
     case message(String)
-    case retryable(String)
+    case retryable(String, retryAfter: TimeInterval? = nil)
     case outputLimit
-    var errorDescription: String? { switch self { case .message(let s), .retryable(let s): return s; case .outputLimit: return "译文未完整生成，正在调整分段。" } }
+    var errorDescription: String? { switch self { case .message(let s), .retryable(let s, _): return s; case .outputLimit: return "译文未完整生成，正在调整分段。" } }
 }
 
 enum KeyAccessError: LocalizedError {
@@ -275,8 +275,8 @@ enum DeepSeekClient {
             switch http.statusCode {
             case 401: throw TranslateError.message("API Key 无效，请在设置中检查。")
             case 402: throw TranslateError.message("DeepSeek 账户余额不足。")
-            case 429: throw TranslateError.retryable("请求过于频繁，请稍后重试。")
-            case 500...599: throw TranslateError.retryable("DeepSeek 服务繁忙，请稍后重试。")
+            case 429: throw TranslateError.retryable("请求过于频繁，请稍后重试。", retryAfter: TranslationRetry.retryAfter(http))
+            case 500...599: throw TranslateError.retryable("DeepSeek 服务暂不可用，请稍后重试。服务状态：status.deepseek.com", retryAfter: TranslationRetry.retryAfter(http))
             default: throw TranslateError.message("DeepSeek 服务返回 HTTP \(http.statusCode)，请检查模型名称和设置。")
             }
         }
