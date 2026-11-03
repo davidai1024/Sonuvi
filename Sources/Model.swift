@@ -321,22 +321,16 @@ final class AppModel: ObservableObject {
                         self.resultAttributed = work.attributedOutput
                     }, onProgress: { [weak self] part, total, retrying in
                         guard let self, self.currentID == id, !Task.isCancelled else { return }
-                        self.statusText = retrying ? "连接暂时中断，正在重试第 \(part)/\(total) 段…"
+                        self.statusText = retrying ? "服务繁忙或连接中断，正在自动重试第 \(part)/\(total) 段…"
                             : (total > 1 ? "正在翻译第 \(part)/\(total) 段…" : "正在翻译…")
                     })
                 } else {
                     let req = try DeepSeekClient.request(text: text, kind: kind, direction: dir, model: model, key: key)
-                    var value = ""
-                    for attempt in 0...1 {
-                        do { value = try await DeepSeekClient.stream(req) { _ in }; break }
-                        catch TranslateError.retryable(let message) {
-                            guard attempt == 0 else { throw TranslateError.message(message) }
-                            self.statusText = "连接暂时中断，正在重试…"
-                            try await Task.sleep(nanoseconds: 800_000_000)
-                            try Task.checkCancellation()
-                        }
-                    }
-                    output = value
+                    output = try await TranslationRetry.run(onRetry: {
+                        self.statusText = "服务繁忙或连接中断，正在自动重试…"
+                    }, operation: {
+                        try await DeepSeekClient.stream(req) { _ in }
+                    })
                 }
                 try Task.checkCancellation()
                 guard self.currentID == id else { return }
