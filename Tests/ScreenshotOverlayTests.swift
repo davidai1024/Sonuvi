@@ -189,7 +189,7 @@ func runScreenshotOverlayTests() async {
     check(board.string(forType: .string) == "fixture sentinel", "An overflowing image does not overwrite the clipboard with a clipped result")
     if list.text.contains("①") || list.text.contains("④") || list.text.contains("88") { FileHandle.standardError.write(Data(("Sidebar OCR fixture: " + list.regions.filter { $0.bounds.minX < 0.18 }.map { "\($0.text) \($0.bounds)" }.joined(separator: "; ") + "\n").utf8)) }
     check(!list.text.contains("①") && !list.text.contains("④") && list.regions.filter { $0.text.contains("共享") }.allSatisfy { $0.text == "共享" }, "Real SF Symbols are excluded when Vision merges their glyphs into sidebar labels")
-    let nativeLabels = ["全部类型":"All Types","星标":"Starred","大小":"Size","最近修改":"Modified","我":"Me","回收站":"Recycle Bin"]
+    let nativeLabels = ["全部类型":"All Types","星标":"Starred","大小":"Size","最近修改":"Modified","我":"Me","回收站":"Recycle Bin","文稿":"Documents"]
     let nativeValues = Dictionary(uniqueKeysWithValues: list.regions.compactMap { region in nativeLabels[region.text].map { (region.id,$0) } })
     let nativeCanvas = ScreenshotCanvasView(image: makeScreenshotWorkspaceScene(diagram: false),size: CGSize(width:1040,height:650))
     _ = nativeCanvas.update(document: list,values: nativeValues,original:false)
@@ -197,6 +197,7 @@ func runScreenshotOverlayTests() async {
         guard let editor = scroll.documentView as? NSTextView,let container = editor.textContainer,let manager = editor.layoutManager else { fatalError("Missing native text layout") }
         manager.ensureLayout(for: container)
         let used = manager.usedRect(for: container)
+        check(!scroll.hasVerticalScroller,"Ordinary labels do not disable image copying through a false overflow: \(editor.string), frame=\(scroll.frame), content=\(used), font=\(editor.font!.pointSize), source=\(list.regions.first(where: {$0.text == "文稿"})?.bounds ?? .zero)")
         check(used.maxY+4 <= scroll.contentSize.height+0.5 && used.width+4 <= scroll.contentSize.width+0.5,"Native short label is fully visible, including its last glyph: " + editor.string)
     }
     let prefixBox = CGRect(x: 0.02,y: 0.7,width: 0.035,height: 0.06), labelBox = CGRect(x: 0.07,y: 0.7,width: 0.2,height: 0.04)

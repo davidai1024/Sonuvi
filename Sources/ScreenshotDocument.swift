@@ -196,7 +196,7 @@ final class ScreenshotLayoutObstacles {
             for y in stride(from: Int(source.minY)-2, through: Int(bottom), by: -1) {
                 var occupied = 0
                 for x in loX...hiX where different(x,y) { occupied += 1 }
-                if occupied >= max(2, (hiX-loX+1)/3) { floor = CGFloat(y)+2; break }
+                if occupied >= max(3, (hiX-loX+1)*3/4) { floor = CGFloat(y)+2; break }
             }
         }
         return (max(source.maxX,edge),min(source.minY,floor))
@@ -227,7 +227,7 @@ enum ScreenshotLayout {
         guard !original.isNull, original.width > 1, original.height > 1 else {
             return ScreenshotTextPlacement(frame: .zero, fontSize: 9, contentHeight: 0, scrolls: false)
         }
-        let gap: CGFloat = 4, padding: CGFloat = 8
+        let gap: CGFloat = 4, padding: CGFloat = 4, widthPadding: CGFloat = 8
         let neighbors = regions.filter { $0.id != region.id }.map(\.bounds) + protectedBounds
         var right = canvas.maxX, below: CGFloat = 0
         for bounds in neighbors {
@@ -244,14 +244,14 @@ enum ScreenshotLayout {
         // does not become a 20 pt English label after translation.
         let fromWidth = region.bounds.width * size.width / max(0.1, sourceWidth)
         let fromHeight = region.lineHeight * size.height * 1.25
-        let preferred = (min(40, max(8, min(fromWidth, fromHeight))) * 2).rounded(.down) / 2
+        let preferred = (min(40, max(9, min(fromWidth, fromHeight))) * 2).rounded(.down) / 2
         if original.height <= region.lineHeight * size.height * 1.6 + padding {
             // Short UI labels may need more horizontal space when Chinese
             // becomes English. Stop before other text in the same row.
             let natural = text.components(separatedBy: .newlines).map {
                 (NSAttributedString(string: $0, attributes: [.font: NSFont.systemFont(ofSize: preferred)]).size().width)
             }.max() ?? original.width
-            let extraWidth = min(max(0, right - original.minX), min(max(original.width * 5, preferred * 12), natural + padding))
+            let extraWidth = min(max(0, right - original.minX), min(max(original.width * 5, preferred * 12), ceil(natural) + widthPadding + 2))
             original.size.width = max(original.width, extraWidth)
         }
         // Expand down only into empty space, never over the next text block.
@@ -259,11 +259,11 @@ enum ScreenshotLayout {
         var lower: CGFloat = min(9, preferred), upper = preferred
         for _ in 0..<8 {
             let middle = (lower + upper) / 2
-            if measuredHeight(text, width: original.width - padding, fontSize: middle) + padding <= maximumHeight { lower = middle }
+            if measuredHeight(text, width: original.width - widthPadding, fontSize: middle) + padding <= maximumHeight { lower = middle }
             else { upper = middle }
         }
         let font = lower
-        let content = measuredHeight(text, width: original.width - padding, fontSize: font) + padding
+        let content = measuredHeight(text, width: original.width - widthPadding, fontSize: font) + padding
         let height = max(original.height, min(maximumHeight, content))
         let frame = CGRect(x: floor(original.minX), y: floor(original.maxY - height), width: ceil(original.width), height: ceil(height)).intersection(canvas)
         return ScreenshotTextPlacement(frame: frame, fontSize: font, contentHeight: content, scrolls: content > frame.height + 0.5)
