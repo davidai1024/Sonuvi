@@ -202,7 +202,7 @@ enum WindowGeometry {
 enum OCRService {
     enum Input { case image(CGImage), file(URL) }
     static func recognize(_ input: Input) async throws -> String { try await recognizeDocument(input).text }
-    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false, timing: (@Sendable ([String:Double]) -> Void)? = nil) async throws -> ScreenshotDocument {
+    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false, accessibility: ScreenshotAccessibilityContext? = nil, timing: (@Sendable ([String:Double]) -> Void)? = nil) async throws -> ScreenshotDocument {
         let cancellation = ScreenshotOCRCancellation()
         let work = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
@@ -225,15 +225,44 @@ enum OCRService {
                       !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 return ScreenshotTextLine(text: candidate.string, bounds: observation.boundingBox, confidence: candidate.confidence)
             }
+            let geometry = ScreenshotVisualGeometry(image:image)
+            let semantics = accessibility?.read(lines:lines) ?? (controls:[],graphics:[])
+            protectedBounds = geometry.graphics(for:lines) + semantics.graphics
+            // Modifier-key glyphs are screenshot graphics even when OCR turns
+            // an arrow into a letter. Keep the chord's original pixels.
+            let chord = try! NSRegularExpression(pattern:#"[⌃⌥⇧⌘^~][^\n]{0,8}(?:Space|Return|Tab|Delete|Esc|F\d{1,2})"#)
+            for observation in request.results ?? [] {
+                guard let candidate = observation.topCandidates(1).first else {continue}
+                let raw = candidate.string
+                for match in chord.matches(in:raw,range:NSRange(raw.startIndex...,in:raw)) {
+                    if let range = Range(match.range,in:raw),let box = try? candidate.boundingBox(for:range) {protectedBounds.append(box.boundingBox)}
+                }
+            }
             // Vision can place several table cells in one observation. Recover
             // large word gaps before paragraph grouping; columns are separate
             // translation slots, not a sentence to reflow across the whole row.
             let separated = (request.results ?? []).flatMap { observation -> [ScreenshotTextLine] in
                 guard let candidate = observation.topCandidates(1).first else { return [] }
                 let raw = candidate.string
-                var string = raw, sourceOffset = 0
-                guard !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
-                var textBounds = observation.boundingBox
+                // Subtract graphic masks before any text enters the provider.
+                // A single OCR observation can contain both icon and label.
+                var ranges:[Range<String.Index>] = [],run:String.Index?
+                for index in raw.indices {
+                    let end = raw.index(after:index)
+                    let box = (try? candidate.boundingBox(for:index..<end))?.boundingBox
+                    let graphic = box.map { b in protectedBounds.contains { mask in
+                        let overlap = mask.intersection(b)
+                        return !overlap.isNull && overlap.width*overlap.height >= b.width*b.height*0.4
+                    }} ?? false
+                    if graphic {if let start = run {ranges.append(start..<index);run = nil}}
+                    else if run == nil {run = index}
+                }
+                if let start = run {ranges.append(start..<raw.endIndex)}
+                return ranges.flatMap { safeRange -> [ScreenshotTextLine] in
+                guard let first = raw[safeRange].firstIndex(where:{!$0.isWhitespace}),let last = raw[safeRange].lastIndex(where:{!$0.isWhitespace}) else {return []}
+                let trimmed = first..<raw.index(after:last)
+                var string = String(raw[trimmed]), sourceOffset = raw.distance(from:raw.startIndex,to:trimmed.lowerBound)
+                var textBounds = (try? candidate.boundingBox(for:trimmed))?.boundingBox ?? observation.boundingBox
                 func candidateBox(_ range: Range<String.Index>) -> CGRect? {
                     let lower = raw.index(raw.startIndex, offsetBy: sourceOffset + string.distance(from: string.startIndex, to: range.lowerBound))
                     let upper = raw.index(raw.startIndex, offsetBy: sourceOffset + string.distance(from: string.startIndex, to: range.upperBound))
@@ -342,8 +371,9 @@ enum OCRService {
                     }
                     return ScreenshotTextLine(text:text,bounds:box,confidence:candidate.confidence)
                 }
+                }
             }
-            let initial = ScreenshotTextFilter.separate(separated.isEmpty ? lines : separated,imageSize:imageSize)
+            let initial = ScreenshotTextFilter.separate(separated,imageSize:imageSize)
             protectedBounds += initial.icons
             let refined = initial.text.map { line -> ScreenshotTextLine in
                 guard ScreenshotTextFilter.isUILabel(line.text) else { return line }
@@ -351,7 +381,29 @@ enum OCRService {
                 guard let bounds = prefixPixels?.tightText(in:line.bounds,excluding:protectedBounds) else { return line }
                 return ScreenshotTextLine(text:line.text,bounds:bounds,confidence:line.confidence)
             }
-            let document = ScreenshotDocument(lines:refined,imageSize:imageSize,protectedBounds:protectedBounds)
+            let colors = Dictionary(refined.map {line in (NSStringFromRect(line.bounds),ScreenshotRegionColors.sample(image:image,rect:ScreenshotLayout.rect(line.bounds,in:imageSize).insetBy(dx:-2,dy:-2),size:imageSize).foreground.usingColorSpace(.sRGB)!)} ,uniquingKeysWith: {first,_ in first})
+            func sameStyle(_ a:ScreenshotTextLine,_ b:ScreenshotTextLine) -> Bool {
+                guard let x = colors[NSStringFromRect(a.bounds)],let y = colors[NSStringFromRect(b.bounds)] else {return true}
+                return max(abs(x.redComponent-y.redComponent),abs(x.greenComponent-y.greenComponent),abs(x.blueComponent-y.blueComponent)) < 0.15
+            }
+            // Recover touching fragments from one baseline (e.g. a number and
+            // its description) without joining real table/control cells.
+            var joined:[ScreenshotTextLine] = []
+            for line in refined.sorted(by:{abs($0.bounds.midY-$1.bounds.midY)*imageSize.height > 3 ? $0.bounds.midY > $1.bounds.midY : $0.bounds.minX < $1.bounds.minX}) {
+                if let index = joined.indices.reversed().first(where: {i in
+                    let a = joined[i],h = min(a.bounds.height,line.bounds.height)*imageSize.height
+                    let gap = (line.bounds.minX-a.bounds.maxX)*imageSize.width
+                    let bridge = CGRect(x:a.bounds.maxX,y:min(a.bounds.minY,line.bounds.minY),width:max(0,line.bounds.minX-a.bounds.maxX),height:max(a.bounds.height,line.bounds.height))
+                    let firstControl = geometry.container(for:a.bounds),secondControl = geometry.container(for:line.bounds)
+                    let separateControls = firstControl?.compact == true && secondControl?.compact == true && firstControl?.bounds != secondControl?.bounds
+                    return !separateControls && gap >= -2 && gap <= max(2,h*0.24) && abs(a.bounds.midY-line.bounds.midY)*imageSize.height < h*0.22
+                        && a.bounds.height/line.bounds.height > 0.75 && a.bounds.height/line.bounds.height < 1.33 && sameStyle(a,line)
+                        && !protectedBounds.contains {$0.intersects(bridge)}
+                }) {
+                    let a = joined[index];joined[index] = ScreenshotTextLine(text:a.text+" "+line.text,bounds:a.bounds.union(line.bounds),confidence:min(a.confidence,line.confidence))
+                } else {joined.append(line)}
+            }
+            let document = geometry.constrain(ScreenshotDocument(lines:joined,imageSize:imageSize,protectedBounds:protectedBounds,grouping:sameStyle),semantic:semantics.controls)
             timing?(["prepare_seconds":prepared-start,"vision_seconds":recognized-prepared,"geometry_seconds":ProcessInfo.processInfo.systemUptime-recognized])
             return document
         }
@@ -370,7 +422,9 @@ enum OCRService {
                                   frame: screen.frame, scale: screen.backingScaleFactor)
         }
         guard let first = screens.first else { completion(.failure(TranslateError.message("没有可用的屏幕。"))); return }
-        let deliver: (Result<FrozenCapture, Error>) -> Void = { result in
+        let sourceWindows = ScreenshotSourceWindow.snapshot()
+        let deliver: (Result<FrozenCapture, Error>) -> Void = { rawResult in
+            let result = rawResult.map { capture in var value = capture;value.sourceWindows = sourceWindows;return value }
             // A native menu may still be tracking. Deliver before dismissing it,
             // through common run-loop modes rather than a MainActor Task.
             CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
