@@ -169,62 +169,127 @@ final class ScreenshotVisualGeometry {
     }
     func constrain(_ document:ScreenshotDocument, semantic:[ScreenshotVisualContainer] = []) -> ScreenshotDocument {
         func logical(_ r:CGRect) -> CGRect {CGRect(x:r.minX*CGFloat(width),y:r.minY*CGFloat(height),width:r.width*CGFloat(width),height:r.height*CGFloat(height))}
-        let canvas = CGRect(x:0,y:0,width:width,height:height)
+        let canvas = CGRect(x:2,y:2,width:max(1,width-4),height:max(1,height-4))
         let regions = document.regions.map { original -> ScreenshotTextRegion in
             var region = original
             let source = logical(region.bounds),line = region.lineHeight*CGFloat(height)
-            let ax = semantic.filter {$0.bounds.contains(CGPoint(x:region.bounds.midX,y:region.bounds.midY))}.min {$0.bounds.width*$0.bounds.height < $1.bounds.width*$1.bounds.height}
+            let axCandidate = semantic.filter {$0.bounds.contains(CGPoint(x:region.bounds.midX,y:region.bounds.midY))}.min {$0.bounds.width*$0.bounds.height < $1.bounds.width*$1.bounds.height}
+            // Some apps expose only the label's accessibility hit frame. That
+            // is not evidence of a visible button edge and must not reintroduce
+            // source-sized layout bounds.
+            let ax = axCandidate.flatMap {candidate -> ScreenshotVisualContainer? in
+                let box = logical(candidate.bounds)
+                return box.width <= source.width+line*0.5 && box.height <= source.height+line*0.5 ? nil : candidate
+            }
             let visual = container(for:region.bounds)
             let control:ScreenshotVisualContainer?
             if let ax,let visual,visual.compact,visual.bounds.width*visual.bounds.height < ax.bounds.width*ax.bounds.height {control = visual}
             else {control = ax ?? visual}
-            var slot = source.insetBy(dx:-2,dy:-2).intersection(canvas)
-            if control == nil,document.regions.filter({abs($0.bounds.minX-region.bounds.minX)*CGFloat(width) < line*0.4 && abs($0.bounds.midY-region.bounds.midY)*CGFloat(height) > line*2}).count >= 2,
-               let edge = columnEdge(after:source.maxX+2,around:pixelRect(region.bounds)) {
-                slot.size.width = max(slot.width,edge-3-slot.minX)
+            let padding = control?.compact == true ? max(2,min(5,logical(control!.bounds).height*0.09)) : max(2,line*0.15)
+            let interior = control.map {logical($0.bounds).insetBy(dx:padding,dy:padding)} ?? canvas
+            // Source text supplies a baseline and a starting point, never a
+            // width allowance. Search all the way to the nearest real obstacle.
+            let left = control?.compact == true ? interior.minX : max(interior.minX,source.minX-2)
+            var right = interior.maxX,bottom = interior.minY,top = min(interior.maxY,source.maxY+2)
+            if control?.compact == true {top = interior.maxY}
+            var kind = control == nil ? "image-edge" : "container"
+            let band = source.insetBy(dx:0,dy:-max(1,line*0.12))
+            var obstacles = document.regions.filter {$0.id != region.id}.map {($0.bounds,"text")}
+            obstacles += document.protectedBounds.map {($0,"graphic")}
+            obstacles += (containers+semantic).filter {$0.compact && !$0.bounds.contains(CGPoint(x:region.bounds.midX,y:region.bounds.midY))}.map {($0.bounds,"control")}
+            // Use the obstacle's near edge, not the midpoint of the empty gap.
+            // OCR, graphics and controls participate even without a container.
+            for (bounds,reason) in obstacles {
+                let r = logical(bounds),overlap = min(band.maxY,r.maxY)-max(band.minY,r.minY)
+                if r.minX >= source.maxX-2,r.midX > source.midX,overlap > min(source.height,r.height)*0.15,r.minX-padding < right {
+                    right = r.minX-padding;kind = reason
+                }
             }
-            if let control {
-                let box = logical(control.bounds),pad = control.compact ? max(2,min(5,box.height*0.09)) : max(3,line*0.25)
-                let inner = box.insetBy(dx:pad,dy:pad)
-                if control.compact { slot = inner }
-                else {
-                    slot = CGRect(x:max(inner.minX,source.minX-2),y:max(inner.minY,source.minY-line*1.3),width:max(1,inner.maxX-max(inner.minX,source.minX-2)),height:line*1.3+source.height+2).intersection(inner)
-                    // Right-hand status labels retain their own short column.
-                    if source.minX > box.minX+box.width*0.7 {slot.origin.x = max(inner.minX,source.minX-line*0.5);slot.size.width = inner.maxX-slot.minX}
+            let raster = rasterRightEdge(source:source,limit:right)
+            if raster < right {right = raster;kind = "pixel-edge"}
+            var slotLeft = left
+            if control?.compact == true {
+                if let edge = rasterLeftEdge(source:source,limit:interior.minX) {slotLeft = max(slotLeft,edge)}
+                for (bounds,_) in obstacles {
+                    let r = logical(bounds)
+                    if r.maxX <= source.minX+1,abs(r.midY-source.midY) < max(r.height,source.height)*0.8 {slotLeft = max(slotLeft,r.maxX+padding)}
                 }
-                // Icons occupy real space even when OCR produces no character.
-                for mask in document.protectedBounds {
-                    let r = logical(mask)
-                    guard abs(r.midY-source.midY) < max(r.height,source.height)*0.8 else {continue}
-                    if r.maxX <= source.minX+1 && r.maxX >= slot.minX {slot.origin.x = min(slot.maxX,r.maxX+2);slot.size.width = max(0,inner.maxX-slot.minX)}
-                    else if r.minX >= source.maxX-1 && r.minX < slot.maxX {slot.size.width = max(0,r.minX-2-slot.minX)}
-                }
-                for other in document.regions where other.id != region.id {
-                    let r = logical(other.bounds)
-                    if abs(r.midY-source.midY) < max(r.height,source.height)*0.7 {
-                        if r.midX > source.midX && r.minX >= source.maxX-2 && r.minX < slot.maxX {slot.size.width = max(0,(r.minX+source.maxX)/2-1-slot.minX)}
-                        if r.midX < source.midX && r.maxX <= source.minX+2 && r.maxX > slot.minX {let right = slot.maxX;slot.origin.x = (r.maxX+source.minX)/2+1;slot.size.width = max(0,right-slot.minX)}
-                    } else if r.maxX > slot.minX && r.minX < slot.maxX {
-                        if r.midY < source.midY && r.maxY <= source.minY+2 && r.maxY > slot.minY {
-                            let top = slot.maxY;slot.origin.y = min(source.minY,(r.maxY+source.minY)/2+1);slot.size.height = max(0,top-slot.minY)
-                        } else if r.midY > source.midY && r.minY >= source.maxY-2 && r.minY < slot.maxY {slot.size.height = max(0,(r.minY+source.maxY)/2-1-slot.minY)}
-                    }
-                }
-                region.centeredInViewport = control.compact && (control.segment || abs(source.midX-slot.midX) < max(line*0.7,slot.width*0.13))
             }
-            if control == nil,region.bounds.midX < 0.12 {
+            // Reserve vertical space against actual neighboring rows and rules,
+            // so wrapping uses available space instead of a source-length ratio.
+            for (bounds,_) in obstacles {
+                let r = logical(bounds)
+                guard r.maxX > slotLeft,r.minX < right else {continue}
+                if r.maxY <= source.minY+1,r.midY < source.midY {bottom = max(bottom,r.maxY+padding)}
+                else if r.minY >= source.maxY-1,r.midY > source.midY {top = min(top,r.minY-padding)}
+            }
+            bottom = max(bottom,rasterBottomEdge(source:source,left:slotLeft,right:right,limit:bottom))
+            // Keep a valid source baseline if Vision boxes overlap by a pixel.
+            bottom = min(bottom,source.minY);top = max(top,source.maxY)
+            var slot = CGRect(x:slotLeft,y:bottom,width:max(1,right-slotLeft),height:max(1,top-bottom)).intersection(interior)
+            region.centerVerticallyInViewport = control?.compact == true
+            region.centeredInViewport = control?.compact == true && (control!.segment || abs(source.midX-slot.midX) < max(line*0.7,slot.width*0.13))
+            let leftPixel = rasterLeftEdge(source:source,limit:max(interior.minX,source.minX-line*3))
+            let leadingGraphic = (leftPixel.map {$0 > interior.minX+line*0.5} ?? false) || document.protectedBounds.contains {bounds in
+                let r = logical(bounds)
+                return r.maxX <= source.minX+1 && source.minX-r.maxX < line*3 && abs(r.midY-source.midY) < max(r.height,source.height)*0.8
+            }
+            if control == nil,!leadingGraphic,region.bounds.midX < 0.12 {
                 let peers = document.regions.filter {abs($0.bounds.midX-region.bounds.midX)*CGFloat(width) < max(1,line*0.3) && $0.lineHeight/region.lineHeight > 0.75 && $0.lineHeight/region.lineHeight < 1.3}
                 let widths = peers.map {$0.bounds.width*CGFloat(width)},lefts = peers.map {$0.bounds.minX*CGFloat(width)},rights = peers.map {$0.bounds.maxX*CGFloat(width)}
                 let spread = (widths.max() ?? 0)-(widths.min() ?? 0)
                 region.centeredInViewport = peers.count >= 3 && spread > line*0.75 && (lefts.max() ?? 0)-(lefts.min() ?? 0) > spread*0.4 && (rights.max() ?? 0)-(rights.min() ?? 0) > spread*0.4
+                if region.centeredInViewport {
+                    let half = min(source.midX-interior.minX,right-source.midX)
+                    slot.origin.x = source.midX-half;slot.size.width = max(1,half*2)
+                }
             }
-            // Even an unknown control has a conservative source-sized viewport;
-            // an OCR rectangle alone never authorizes growth across the screen.
             let final = slot.intersection(canvas)
             region.viewport = CGRect(x:final.minX/CGFloat(width),y:final.minY/CGFloat(height),width:final.width/CGFloat(width),height:final.height/CGFloat(height))
+            region.rightBoundaryKind = kind
             return region
         }
         return ScreenshotDocument(regions:regions,protectedBounds:document.protectedBounds)
+    }
+    // Pixel coordinates here are bottom-left, matching the OCR/layout system.
+    private func uprightColor(_ x:Int,_ y:Int) -> (Int,Int,Int) {color(x,height-1-y)}
+    private func verticalInkEdge(_ x:Int,_ lo:Int,_ hi:Int) -> Bool {
+        var strong = 0,soft = 0,total = 0
+        for y in lo...hi {
+            let change = max(distance(uprightColor(x-1,y),uprightColor(x+1,y)),distance(uprightColor(x-2,y),uprightColor(x,y)))
+            total += 1;if change >= 18 {strong += 1};if change >= 5 {soft += 1}
+        }
+        return strong >= max(2,Int(ceil(CGFloat(total)*0.25))) || soft >= max(3,Int(ceil(CGFloat(total)*0.8)))
+    }
+    private func rasterRightEdge(source:CGRect,limit:CGFloat) -> CGFloat {
+        let lo = max(1,Int(source.minY)),hi = min(height-2,Int(source.maxY))
+        let start = max(2,Int(ceil(source.maxX))+2),end = min(width-3,Int(floor(limit)))
+        guard end >= start,hi >= lo else {return limit}
+        // Partial high-contrast strokes stop at graphics/text; full-height
+        // low-contrast transitions stop at borders on dark surfaces.
+        for x in start...end where verticalInkEdge(x,lo,hi) {return max(source.maxX,CGFloat(x)-3)}
+        return limit
+    }
+    private func rasterLeftEdge(source:CGRect,limit:CGFloat) -> CGFloat? {
+        let lo = max(1,Int(source.minY)),hi = min(height-2,Int(source.maxY))
+        let start = min(width-3,Int(floor(source.minX))-3),end = max(2,Int(ceil(limit)))
+        guard start >= end,hi >= lo else {return nil}
+        for x in stride(from:start,through:end,by:-1) where verticalInkEdge(x,lo,hi) {return min(source.minX,CGFloat(x)+3)}
+        return nil
+    }
+    private func rasterBottomEdge(source:CGRect,left:CGFloat,right:CGFloat,limit:CGFloat) -> CGFloat {
+        let lo = max(1,Int(ceil(left))),hi = min(width-2,Int(floor(right)))
+        let start = min(height-3,Int(floor(source.minY))-3),end = max(2,Int(ceil(limit)))
+        guard start >= end,hi >= lo else {return limit}
+        for y in stride(from:start,through:end,by:-1) {
+            var strong = 0,total = 0
+            for x in stride(from:lo,through:hi,by:2) {
+                total += 1
+                if distance(uprightColor(x,y-1),uprightColor(x,y+1)) >= 6 {strong += 1}
+            }
+            if strong >= max(3,Int(ceil(CGFloat(total)*0.72))) {return min(source.minY,CGFloat(y)+3)}
+        }
+        return limit
     }
     private func tileBehind(_ glyph:CGRect) -> Bool {
         let pad = max(2,glyph.height*0.18)
@@ -235,17 +300,6 @@ final class ScreenshotVisualGeometry {
             return component.area >= 30 && r.width/r.height > 0.6 && r.width/r.height < 1.6 && r.height >= glyph.height*0.96 && r.height < glyph.height*2.5
                 && !overlap.isNull && overlap.width*overlap.height >= glyph.width*glyph.height*0.75 && edgeStrength(r) >= 0.5
         }
-    }
-    private func columnEdge(after x:CGFloat,around source:CGRect) -> CGFloat? {
-        let extent = max(24,source.height*3),y0 = max(2,Int(source.midY-extent)),y1 = min(height-3,Int(source.midY+extent))
-        let start = max(3,Int(x)),end = min(width-4,Int(source.minX+CGFloat(width)*0.3))
-        guard end > start,y1 > y0 else {return nil}
-        for x in start...end {
-            var strong = 0,total = 0
-            for y in stride(from:y0,through:y1,by:2) {total += 1;if distance(color(x-2,y),color(x+2,y)) >= 6 {strong += 1}}
-            if CGFloat(strong)/CGFloat(total) > 0.85 {return CGFloat(x)}
-        }
-        return nil
     }
     private func backgroundColor(_ r:CGRect) -> (Int,Int,Int) {color(Int(r.minX+r.width*0.5),Int(r.minY+2))}
     private func inkDensity(_ r:CGRect,background:(Int,Int,Int)) -> CGFloat {
