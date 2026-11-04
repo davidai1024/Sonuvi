@@ -390,7 +390,11 @@ final class ScreenshotTranslationController {
                     self.model.status = "正在识别截图文字…"
                     let document: ScreenshotDocument
                     if let recognize = self.recognizeOverride { document = try await recognize(self.image) }
-                    else { document = try await OCRService.recognizeDocument(.image(self.image)) }
+                    else {
+                        let crop = CaptureGeometry.displayRect(self.captureRect,primaryTop:NSScreen.screens.first?.frame.maxY ?? self.snapshot.frame.maxY)
+                        let context = ScreenshotAccessibilityContext(windows:self.snapshot.sourceWindows,crop:crop)
+                        document = try await OCRService.recognizeDocument(.image(self.image),accessibility:context)
+                    }
                     try Task.checkCancellation(); guard current == self.revision else { return }
                     guard !document.regions.isEmpty else { throw TranslateError.message("没有识别到文字，请重新框选清晰的区域。") }
                     self.model.document = document

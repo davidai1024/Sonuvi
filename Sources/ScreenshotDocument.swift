@@ -33,20 +33,23 @@ struct ScreenshotTextLine {
     let bounds: CGRect // Vision normalized coordinates, origin at bottom-left.
     let confidence: Float
 }
-struct ScreenshotTextRegion: Identifiable {
+struct ScreenshotTextRegion: Identifiable, Equatable {
     let id: Int
     let text: String
     let bounds: CGRect
     let lineHeight: CGFloat
     var lineBounds: [CGRect] = []
+    // A hard inner viewport, independent of the translated string's length.
+    var viewport: CGRect? = nil
+    var centeredInViewport = false
     var direction: Direction { TextRules.direction(text) }
     var sourceBounds: [CGRect] { lineBounds.isEmpty ? [bounds] : lineBounds }
 }
-struct ScreenshotDocument {
+struct ScreenshotDocument: Equatable {
     let regions: [ScreenshotTextRegion]
     let protectedBounds: [CGRect]
     var text: String { regions.map(\.text).joined(separator: "\n\n") }
-    init(lines: [ScreenshotTextLine], imageSize: CGSize = CGSize(width: 1000, height: 1000), protectedBounds: [CGRect] = []) {
+    init(lines: [ScreenshotTextLine], imageSize: CGSize = CGSize(width: 1000, height: 1000), protectedBounds: [CGRect] = [], grouping: ((ScreenshotTextLine,ScreenshotTextLine) -> Bool)? = nil) {
         let filtered = ScreenshotTextFilter.separate(lines, imageSize: imageSize)
         self.protectedBounds = protectedBounds + filtered.icons
         let lines = filtered.text
@@ -70,6 +73,7 @@ struct ScreenshotDocument {
                     && line.bounds.height / last.bounds.height >= 0.6 && line.bounds.height / last.bounds.height <= 1.65
                     && max(last.text.count, line.text.count) >= 18
                     && TextRules.direction(last.text) == TextRules.direction(line.text)
+                    && (grouping?(last,line) ?? true)
             }
             if let index = candidate { blocks[index].lines.append(line); blocks[index].bounds = blocks[index].bounds.union(line.bounds) }
             else { blocks.append(Block(lines: [line], bounds: line.bounds)) }
@@ -278,6 +282,7 @@ struct ScreenshotTextPlacement {
     let contentHeight: CGFloat
     let scrolls: Bool
     var alignment: NSTextAlignment = .left
+    var textInset: CGFloat = 2
 }
 enum ScreenshotLayout {
     static func rect(_ normalized: CGRect, in size: CGSize) -> CGRect {
@@ -292,6 +297,9 @@ enum ScreenshotLayout {
         return ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY))
     }
     static func placement(region: ScreenshotTextRegion, text: String, regions: [ScreenshotTextRegion], size: CGSize, protectedBounds: [CGRect] = [], obstacles: ScreenshotLayoutObstacles? = nil) -> ScreenshotTextPlacement {
+        if let viewport = region.viewport {
+            return containedPlacement(region:region,text:text,viewport:rect(viewport,in:size),size:size)
+        }
         let canvas = CGRect(origin: .zero, size: size)
         var original = rect(region.bounds, in: size).insetBy(dx: -2, dy: -2).intersection(canvas)
         guard !original.isNull, original.width > 1, original.height > 1 else {
@@ -357,6 +365,27 @@ enum ScreenshotLayout {
         let height = max(original.height, min(maximumHeight, content))
         let frame = CGRect(x: floor(original.minX), y: floor(original.maxY - height), width: ceil(original.width), height: ceil(height)).intersection(canvas)
         return ScreenshotTextPlacement(frame:frame,fontSize:font,contentHeight:content,scrolls:content > frame.height+0.5,alignment:centered ? .center : .left)
+    }
+    private static func containedPlacement(region:ScreenshotTextRegion,text:String,viewport:CGRect,size:CGSize) -> ScreenshotTextPlacement {
+        let clipped = viewport.intersection(CGRect(origin:.zero,size:size))
+        guard !clipped.isNull,clipped.width > 4,clipped.height > 4 else {return ScreenshotTextPlacement(frame:.zero,fontSize:7,contentHeight:0,scrolls:true)}
+        // Round inward: outward rounding can cross a one-pixel control border.
+        let frame = CGRect(x:ceil(clipped.minX),y:ceil(clipped.minY),width:max(0,floor(clipped.maxX)-ceil(clipped.minX)),height:max(0,floor(clipped.maxY)-ceil(clipped.minY)))
+        let source = rect(region.bounds,in:size),line = region.lineHeight*size.height
+        let units = region.text.components(separatedBy:.newlines).map {NSAttributedString(string:$0,attributes:[.font:NSFont.systemFont(ofSize:100)]).size().width/100}.max() ?? 1
+        let preferred = min(64,max(7,min(source.width/max(0.1,units),line*1.25)))
+        // Match the source's scale. Small screenshots must not inherit a fixed
+        // 9 pt lower bound that is larger than the control itself.
+        var lower = min(preferred,5.5),upper = preferred
+        for _ in 0..<10 {
+            let middle = (lower+upper)/2
+            if measuredHeight(text,width:max(1,frame.width-2),fontSize:middle)+2 <= frame.height {lower = middle}else{upper = middle}
+        }
+        let content = measuredHeight(text,width:max(1,frame.width-2),fontSize:lower)+2
+        let overflow = content > frame.height+0.1
+        let height = min(frame.height,ceil(content))
+        let y = region.centeredInViewport ? floor(frame.midY-height/2) : floor(frame.maxY-height)
+        return ScreenshotTextPlacement(frame:CGRect(x:frame.minX,y:max(frame.minY,y),width:frame.width,height:height),fontSize:lower,contentHeight:content,scrolls:overflow,alignment:region.centeredInViewport ? .center : .left,textInset:1)
     }
     static func toolbarFrame(selection: CGRect, screen: CGRect, size: CGSize) -> CGRect {
         let x = max(screen.minX + 8, min(selection.midX - size.width / 2, screen.maxX - size.width - 8))

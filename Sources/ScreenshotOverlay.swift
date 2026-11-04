@@ -97,7 +97,7 @@ struct ScreenshotRegionColors {
 enum ScreenshotImageRenderer {
     static func background(image: CGImage, size: CGSize, document: ScreenshotDocument, values: [Int: String]) -> CGImage? {
         guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                                      space: image.colorSpace?.model == .rgb ? image.colorSpace! : CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         context.scaleBy(x: CGFloat(image.width) / size.width, y: CGFloat(image.height) / size.height)
         for region in document.regions where values[region.id] != nil && values[region.id] != region.text {
@@ -105,6 +105,7 @@ enum ScreenshotImageRenderer {
                 let rect = ScreenshotLayout.rect(box, in: size).insetBy(dx: -1.5, dy: -1)
                 let color = ScreenshotRegionColors.sample(image: image, rect: rect, size: size)
                 context.saveGState();context.clip(to:rect)
+                if let viewport = region.viewport { context.clip(to:ScreenshotLayout.rect(viewport,in:size)) }
                 for box in document.protectedBounds {
                     let protected = ScreenshotLayout.rect(box,in:size).insetBy(dx:-0.5,dy:-0.5)
                     if protected.intersects(rect) {
@@ -121,7 +122,7 @@ enum ScreenshotImageRenderer {
         if original { return image }
         guard let document, size.width > 0, size.height > 0,
               let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                                      space: image.colorSpace?.model == .rgb ? image.colorSpace! : CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         let cleaned = background(image: image, size: size, document: document, values: values) ?? image
         context.draw(cleaned, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         context.scaleBy(x: CGFloat(image.width) / size.width, y: CGFloat(image.height) / size.height)
@@ -135,9 +136,13 @@ enum ScreenshotImageRenderer {
             guard !placement.scrolls else { return nil } // Do not export clipped translations as a complete image.
             let color = ScreenshotRegionColors.sample(image: image, rect: ScreenshotLayout.rect(region.bounds, in: size).insetBy(dx: -2, dy: -2), size: size)
             context.saveGState(); context.clip(to: placement.frame)
+            for mask in document.protectedBounds {
+                let path = CGMutablePath();path.addRect(placement.frame);path.addRect(ScreenshotLayout.rect(mask,in:size).insetBy(dx:-0.5,dy:-0.5))
+                context.addPath(path);context.clip(using:.evenOdd)
+            }
             let paragraph = NSMutableParagraphStyle();paragraph.alignment = placement.alignment
             let attributes: [NSAttributedString.Key: Any] = [.font:NSFont.systemFont(ofSize:placement.fontSize),.foregroundColor:color.foreground,.paragraphStyle:paragraph]
-            NSAttributedString(string: text, attributes: attributes).draw(with: placement.frame.insetBy(dx: 2, dy: 2),
+            NSAttributedString(string: text, attributes: attributes).draw(with: placement.frame.insetBy(dx: placement.textInset, dy: placement.textInset),
                 options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
             context.restoreGState()
         }
@@ -155,6 +160,7 @@ final class ScreenshotCanvasView: NSView {
     private var colors: [Int: ScreenshotRegionColors] = [:]
     private var cleaned: CGImage?
     private var renderedValues: [Int: String] = [:]
+    private var renderedDocument: ScreenshotDocument?
     init(image: CGImage, size: CGSize) {
         self.image = image
         super.init(frame: CGRect(origin: .zero, size: size))
@@ -167,6 +173,7 @@ final class ScreenshotCanvasView: NSView {
     override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); layer?.contentsScale = window?.backingScaleFactor ?? 2 }
     func update(document: ScreenshotDocument?, values: [Int: String], original: Bool) -> Bool {
         guard let document else { return false }
+        if renderedDocument != document {lastText = [:];colors = [:];renderedDocument = document;renderedValues = [:]}
         if renderedValues != values {
             cleaned = ScreenshotImageRenderer.background(image: image, size: bounds.size, document: document, values: values)
             renderedValues = values
@@ -190,7 +197,7 @@ final class ScreenshotCanvasView: NSView {
             else {
                 scroll = NSScrollView(); scroll.borderType = .noBorder; scroll.drawsBackground = false
                 scroll.scrollerStyle = .overlay; scroll.hasHorizontalScroller = false; scroll.autohidesScrollers = true
-                scroll.wantsLayer = true; scroll.layer?.cornerRadius = 2
+                scroll.wantsLayer = true; scroll.layer?.cornerRadius = 2; scroll.layer?.masksToBounds = true
                 text = NSTextView(); text.isEditable = false; text.isSelectable = true; text.isRichText = false
                 text.drawsBackground = false; text.textContainerInset = NSSize(width: 2, height: 2)
                 text.textContainer?.lineFragmentPadding = 0; text.textContainer?.widthTracksTextView = true
@@ -203,11 +210,22 @@ final class ScreenshotCanvasView: NSView {
                 rect: ScreenshotLayout.rect(region.bounds, in: bounds.size).insetBy(dx: -2, dy: -2), size: bounds.size)
             colors[region.id] = color
             scroll.frame = placement.frame; scroll.backgroundColor = .clear
+            var holes:[CGRect] = []
+            for protected in document.protectedBounds {
+                var hole = ScreenshotLayout.rect(protected,in:bounds.size).insetBy(dx:-0.5,dy:-0.5).intersection(placement.frame)
+                guard !hole.isNull,!hole.isEmpty else {continue}
+                while let index = holes.firstIndex(where:{$0.intersects(hole)}) {hole = hole.union(holes.remove(at:index))}
+                holes.append(hole)
+            }
+            let mask = CAShapeLayer(),path = CGMutablePath();path.addRect(scroll.bounds)
+            for hole in holes {path.addRect(hole.offsetBy(dx:-placement.frame.minX,dy:-placement.frame.minY))}
+            mask.path = path;mask.fillRule = .evenOdd;mask.fillColor = NSColor.white.cgColor;scroll.layer?.mask = mask
             scroll.hasVerticalScroller = placement.scrolls; scroll.isHidden = original
             if let storage = text.textStorage { StreamingTextUpdate.apply(value, to: storage) }
+            text.textContainerInset = NSSize(width:placement.textInset,height:placement.textInset)
             text.font = .systemFont(ofSize:placement.fontSize);text.textColor = color.foreground;text.alignment = placement.alignment
             text.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(placement.frame.height, placement.contentHeight))
-            text.textContainer?.containerSize = NSSize(width: max(1, scroll.contentSize.width - 4), height: CGFloat.greatestFiniteMagnitude)
+            text.textContainer?.containerSize = NSSize(width: max(1, scroll.contentSize.width - placement.textInset*2), height: CGFloat.greatestFiniteMagnitude)
             text.layoutManager?.ensureLayout(for: text.textContainer!)
             text.toolTip = value; lastText[region.id] = value
         }

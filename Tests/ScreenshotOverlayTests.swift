@@ -12,7 +12,7 @@ func makeSolidScreenshot(width: Int, height: Int, gray: CGFloat) -> CGImage {
 
 @MainActor
 func runScreenshotOverlayTests() async {
-    var checks = 0
+    var checks = runScreenshotContainerChecks()
     func check(_ condition: Bool, _ message: String) { guard condition else { fatalError("FAIL: " + message) }; checks += 1 }
     let size = ScreenshotDisplaySpec.pixelSize(points: CGSize(width: 1512, height: 982), scale: 2)
     check(size.width == 3024 && size.height == 1964, "Retina capture requests two actual pixels per point")
@@ -200,7 +200,7 @@ func runScreenshotOverlayTests() async {
         manager.ensureLayout(for: container)
         let used = manager.usedRect(for: container)
         check(!scroll.hasVerticalScroller,"Ordinary labels do not disable image copying through a false overflow: \(editor.string), frame=\(scroll.frame), content=\(used), font=\(editor.font!.pointSize), source=\(list.regions.first(where: {$0.text == "文稿"})?.bounds ?? .zero)")
-        check(used.maxY+4 <= scroll.contentSize.height+0.5 && used.width+4 <= scroll.contentSize.width+0.5,"Native short label is fully visible, including its last glyph: " + editor.string)
+        check(used.maxY+editor.textContainerInset.height*2 <= scroll.contentSize.height+0.5 && used.width+editor.textContainerInset.width*2 <= scroll.contentSize.width+0.5,"Native short label is fully visible, including its last glyph: " + editor.string)
     }
     let prefixBox = CGRect(x: 0.02,y: 0.7,width: 0.035,height: 0.06), labelBox = CGRect(x: 0.07,y: 0.7,width: 0.2,height: 0.04)
     check(ScreenshotTextFilter.iconPrefix("88",bounds: prefixBox,label: labelBox,imageSize: canvasSize,coloredTile: false), "A taller shared-people icon misread as repeated digits is protected")

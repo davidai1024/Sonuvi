@@ -37,6 +37,7 @@ struct CapturedDisplay {
 struct FrozenCapture {
     let frame: CGRect
     let displays: [CapturedDisplay]
+    var sourceWindows: [ScreenshotSourceWindow] = []
     init(frame: CGRect, image: CGImage) { self.frame = frame; displays = [CapturedDisplay(frame: frame, image: image)] }
     init(displays: [CapturedDisplay]) {
         self.displays = displays
