@@ -15,7 +15,8 @@ final class AppModel: ObservableObject {
             guard oldValue != source else { return }
             sourceDocument = MarkdownDocument(source)
             if !editingSource { sourceUndo.removeAll(); sourceRedo.removeAll() }
-            sourceAttributed = nil; resultAttributed = nil
+            if sourceAttributed != nil { sourceAttributed = nil }
+            if resultAttributed != nil { resultAttributed = nil }
             classificationTask?.cancel()
             if !editingSource { refreshSourceClassification() }
             sourceApp = nil
