@@ -364,6 +364,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { selectionLog.info("Selection event monitor installed") }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Reopening while a nonactivating capture panel owns the interaction
+        // must not reactivate Settings over it or steal its keyboard focus.
+        guard !model.ocrBusy && screenshotOverlay == nil else { return false }
         // Updater/Keychain activation is not a request to open Settings.
         guard !model.updates.isPresentingManualCheck, !credentialPresentation.isActive else { return false }
         guard startupPresentation.canPresent && !restartInProgress else { return false }
