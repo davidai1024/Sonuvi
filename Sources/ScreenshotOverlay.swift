@@ -17,7 +17,7 @@ final class ScreenshotOverlayModel: ObservableObject {
     @Published var needsSettings = false
     @Published var sourceLanguage = ScreenshotLanguage.automatic
     @Published var targetLanguage = ScreenshotLanguage.automatic
-    @Published var selectingText = false
+    @Published var selectingText = true
     @Published var pinned = false
     @Published var peeking = false
     @Published var editing = false
@@ -116,9 +116,10 @@ enum ScreenshotImageRenderer {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
         defer { NSGraphicsContext.restoreGraphicsState() }
+        let obstacles = ScreenshotLayoutObstacles(image: image, size: size)
         for region in document.regions {
             guard let text = values[region.id], !text.isEmpty, text != region.text else { continue }
-            let placement = ScreenshotLayout.placement(region: region, text: text, regions: document.regions, size: size)
+            let placement = ScreenshotLayout.placement(region: region, text: text, regions: document.regions, size: size, protectedBounds: document.protectedBounds, obstacles: obstacles)
             guard !placement.scrolls else { return nil } // Do not export clipped translations as a complete image.
             let color = ScreenshotRegionColors.sample(image: image, rect: ScreenshotLayout.rect(region.bounds, in: size).insetBy(dx: -2, dy: -2), size: size)
             context.saveGState(); context.clip(to: placement.frame)
@@ -134,6 +135,8 @@ enum ScreenshotImageRenderer {
 @MainActor
 final class ScreenshotCanvasView: NSView {
     let image: CGImage
+    private var obstacles: ScreenshotLayoutObstacles?
+    private var obstacleSize = CGSize.zero
     private var textViews: [Int: NSScrollView] = [:]
     private var lastText: [Int: String] = [:]
     private var colors: [Int: ScreenshotRegionColors] = [:]
@@ -156,12 +159,13 @@ final class ScreenshotCanvasView: NSView {
             renderedValues = values
         }
         layer?.contents = original ? image : (cleaned ?? image)
+        if obstacleSize != bounds.size { obstacles = ScreenshotLayoutObstacles(image: image, size: bounds.size); obstacleSize = bounds.size; lastText = [:] }
         var overflow = false
         for region in document.regions {
             guard let value = values[region.id], value != region.text, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 textViews[region.id]?.isHidden = true; continue
             }
-            let placement = ScreenshotLayout.placement(region: region, text: value, regions: document.regions, size: bounds.size)
+            let placement = ScreenshotLayout.placement(region: region, text: value, regions: document.regions, size: bounds.size, protectedBounds: document.protectedBounds, obstacles: obstacles)
             overflow = overflow || placement.scrolls
             if let scroll = textViews[region.id], lastText[region.id] == value {
                 scroll.isHidden = original; continue
@@ -176,7 +180,8 @@ final class ScreenshotCanvasView: NSView {
                 text = NSTextView(); text.isEditable = false; text.isSelectable = true; text.isRichText = false
                 text.drawsBackground = false; text.textContainerInset = NSSize(width: 2, height: 2)
                 text.textContainer?.lineFragmentPadding = 0; text.textContainer?.widthTracksTextView = true
-                text.isVerticallyResizable = true; text.isHorizontallyResizable = false; text.autoresizingMask = [.width]
+                text.isVerticallyResizable = false; text.isHorizontallyResizable = false
+                text.minSize = .zero; text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,height: CGFloat.greatestFiniteMagnitude)
                 text.setAccessibilityLabel(L10n.text("区域译文"))
                 scroll.documentView = text; textViews[region.id] = scroll; addSubview(scroll)
             }
@@ -185,10 +190,11 @@ final class ScreenshotCanvasView: NSView {
             colors[region.id] = color
             scroll.frame = placement.frame; scroll.backgroundColor = .clear
             scroll.hasVerticalScroller = placement.scrolls; scroll.isHidden = original
-            text.frame = CGRect(x: 0, y: 0, width: placement.frame.width, height: max(placement.frame.height, placement.contentHeight))
-            text.textContainer?.containerSize = NSSize(width: max(1, placement.frame.width - 4), height: CGFloat.greatestFiniteMagnitude)
             if let storage = text.textStorage { StreamingTextUpdate.apply(value, to: storage) }
             text.font = .systemFont(ofSize: placement.fontSize); text.textColor = color.foreground
+            text.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(placement.frame.height, placement.contentHeight))
+            text.textContainer?.containerSize = NSSize(width: max(1, scroll.contentSize.width - 4), height: CGFloat.greatestFiniteMagnitude)
+            text.layoutManager?.ensureLayout(for: text.textContainer!)
             text.toolTip = value; lastText[region.id] = value
         }
         return overflow

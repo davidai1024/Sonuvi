@@ -114,7 +114,9 @@ func runScreenshotOverlayTests() async {
     let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
     controller.copy(to: board)
     check(board.string(forType: .string) == "你好\n\n下面", "Copy translation uses completed regions in reading order")
+    controller.model.completed = [0: "你好，世界", 1: "下面的文字"]
     controller.copyImage(to: board)
+    controller.model.completed = work.completed
     let copiedImage = NSBitmapImageRep(data: board.data(forType: .png)!)!
     check(copiedImage.pixelsWide == 1000 && copiedImage.pixelsHigh == 600, "Copied translated PNG keeps the original Retina pixel dimensions")
     let copiedText = try! await OCRService.recognizeDocument(.image(copiedImage.cgImage!), cpuOnly: true).text
@@ -185,6 +187,49 @@ func runScreenshotOverlayTests() async {
     controller.model.original = false; controller.model.overflow = true
     board.clearContents(); board.setString("fixture sentinel", forType: .string); controller.copyImage(to: board)
     check(board.string(forType: .string) == "fixture sentinel", "An overflowing image does not overwrite the clipboard with a clipped result")
+    if list.text.contains("①") || list.text.contains("④") || list.text.contains("88") { FileHandle.standardError.write(Data(("Sidebar OCR fixture: " + list.regions.filter { $0.bounds.minX < 0.18 }.map { "\($0.text) \($0.bounds)" }.joined(separator: "; ") + "\n").utf8)) }
+    check(!list.text.contains("①") && !list.text.contains("④") && list.regions.filter { $0.text.contains("共享") }.allSatisfy { $0.text == "共享" }, "Real SF Symbols are excluded when Vision merges their glyphs into sidebar labels")
+    let nativeLabels = ["全部类型":"All Types","星标":"Starred","大小":"Size","最近修改":"Modified","我":"Me","回收站":"Recycle Bin","文稿":"Documents"]
+    let nativeValues = Dictionary(uniqueKeysWithValues: list.regions.compactMap { region in nativeLabels[region.text].map { (region.id,$0) } })
+    let nativeCanvas = ScreenshotCanvasView(image: makeScreenshotWorkspaceScene(diagram: false),size: CGSize(width:1040,height:650))
+    _ = nativeCanvas.update(document: list,values: nativeValues,original:false)
+    for scroll in nativeCanvas.subviews.compactMap({ $0 as? NSScrollView }) {
+        guard let editor = scroll.documentView as? NSTextView,let container = editor.textContainer,let manager = editor.layoutManager else { fatalError("Missing native text layout") }
+        manager.ensureLayout(for: container)
+        let used = manager.usedRect(for: container)
+        check(!scroll.hasVerticalScroller,"Ordinary labels do not disable image copying through a false overflow: \(editor.string), frame=\(scroll.frame), content=\(used), font=\(editor.font!.pointSize), source=\(list.regions.first(where: {$0.text == "文稿"})?.bounds ?? .zero)")
+        check(used.maxY+4 <= scroll.contentSize.height+0.5 && used.width+4 <= scroll.contentSize.width+0.5,"Native short label is fully visible, including its last glyph: " + editor.string)
+    }
+    let prefixBox = CGRect(x: 0.02,y: 0.7,width: 0.035,height: 0.06), labelBox = CGRect(x: 0.07,y: 0.7,width: 0.2,height: 0.04)
+    check(ScreenshotTextFilter.iconPrefix("88",bounds: prefixBox,label: labelBox,imageSize: canvasSize,coloredTile: false), "A taller shared-people icon misread as repeated digits is protected")
+    check(!ScreenshotTextFilter.iconPrefix("88",bounds: CGRect(x: 0.02,y: 0.7,width: 0.035,height: 0.04),label: labelBox,imageSize: canvasSize,coloredTile: false), "Ordinary numeric text at the label baseline is retained")
+    let iconLines = [
+        ScreenshotTextLine(text: "口", bounds: CGRect(x: 0.02,y: 0.7,width: 0.025,height: 0.04),confidence: 0.9),
+        ScreenshotTextLine(text: "Desktop", bounds: CGRect(x: 0.06,y: 0.7,width: 0.2,height: 0.04),confidence: 1),
+        ScreenshotTextLine(text: "我", bounds: CGRect(x: 0.8,y: 0.7,width: 0.025,height: 0.04),confidence: 1),
+        ScreenshotTextLine(text: "山", bounds: CGRect(x: 0.1,y: 0.2,width: 0.025,height: 0.04),confidence: 1)
+    ]
+    let filtered = ScreenshotDocument(lines: iconLines, imageSize: canvasSize)
+    check(filtered.protectedBounds.count == 1 && !filtered.text.contains("口"), "Icon-like glyph beside a label is protected and excluded from copy/translation")
+    check(filtered.text.contains("我") && filtered.text.contains("山"), "Real one-character table values and isolated Chinese text survive icon filtering")
+    let duplicate = ScreenshotDocument(regions: (0..<12).map { ScreenshotTextRegion(id: $0,text: "我的设备",bounds: .zero,lineHeight: 0.02) })
+    let dedup = ScreenshotTranslationWork(document: duplicate); requests = 0
+    try! await dedup.run(send: { value,_,_ in requests += 1; check(value == "我的设备", "Repeated cells send a single source label"); return "My Devices" },onUpdate: {_ in},onProgress: {_,_,_ in})
+    check(requests == 1 && dedup.completed.count == 12 && Set(dedup.completed.values).count == 1, "Repeated labels share one translation and consistent wording in all cells")
+    let wall = CGContext(data: nil,width: 1000,height: 600,bitsPerComponent: 8,bytesPerRow: 0,space: CGColorSpaceCreateDeviceRGB(),bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    wall.setFillColor(NSColor.white.cgColor); wall.fill(CGRect(x: 0,y: 0,width: 1000,height: 600))
+    wall.setFillColor(NSColor.black.cgColor); wall.fill(CGRect(x: 220,y: 0,width: 4,height: 600))
+    wall.fill(CGRect(x: 0,y: 400,width: 220,height: 4))
+    let obstacleImage = wall.makeImage()!, obstacles = ScreenshotLayoutObstacles(image: obstacleImage,size: canvasSize)
+    let tight = ScreenshotTextRegion(id: 20,text: "设置",bounds: CGRect(x: 0.1,y: 0.7,width: 0.06,height: 0.05),lineHeight: 0.05)
+    let bounded = ScreenshotLayout.placement(region: tight,text: "Advanced Settings",regions: [tight],size: canvasSize,obstacles: obstacles)
+    check(bounded.frame.maxX <= 110 && bounded.frame.minY >= 202, "Non-text vertical and horizontal separators bound translation cells")
+    let protected = ScreenshotLayout.placement(region: tight,text: "Advanced Settings",regions: [tight],size: canvasSize,protectedBounds: [CGRect(x: 0.23,y: 0.7,width: 0.05,height: 0.05)])
+    check(protected.frame.maxX <= 112, "A protected icon bounds expansion even when OCR recognizes no text there")
+    check(ScreenshotOverlayModel().selectingText, "Translated text is selectable immediately without a toolbar mode switch")
+    let nativeBar = ScreenshotWorkspaceToolbar(model: controller.model,languageChanged: {},copy: {},copyImage: {},open: {},reselect: {},retry: {},close: {},settings: {})
+    let controls = (nativeBar.subviews.first as? NSStackView)?.arrangedSubviews ?? []
+    check(controls.count == 5 && controls.allSatisfy { $0 is NSControl } && nativeBar.material == .popover && nativeBar.appearance == nil, "Five native controls inherit system appearance in a compact material toolbar")
     controller.close(); controller.close()
     print("PASS: \(checks) Retina screenshot and in-place translation checks")
 }
