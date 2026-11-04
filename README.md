@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.49-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.50-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载翻译版 · 17.4 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.49/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463.6 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.49/Sonuvi-Mac-Offline.dmg)**
+**[下载翻译版 · 17.4 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.50/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463.7 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.50/Sonuvi-Mac-Offline.dmg)**
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.49
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.50
 
 两个版本功能相同。轻量版未内置朗读模型，可随时在「设置 → 模型」免费下载约 505 MB 的本地语音资源；完整朗读版已内置模型、运行环境和 28 个英文音色，无需另行下载。模型准备好后，英文朗读免费且可离线使用。已有模型会保留，可单独更新。
 
-[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.49)
+[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.50)
 <!-- sonuvi-download:end -->
 
 [官方网站](https://sonuvi.davidai1024.com/) · [使用教程](https://sonuvi.davidai1024.com/learn/) · [28 种音色试听](https://sonuvi.davidai1024.com/learn/voices/) · [English guides](https://sonuvi.davidai1024.com/en/learn/)
@@ -92,7 +92,7 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.49
 | **两种播放位置** | 跨应用操作显示浮条；翻译窗口内发起朗读，直接在窗口底部显示点阵与停止按钮。 |
 | **中英自动互译** | 中文译英文、英文译中文，无需来回切换方向。 |
 | **词典与句子模式** | 单词、短语展示释义、词性、音标和例句；句子展示流式译文。 |
-| **截图翻译** | Retina 原始像素与本机 OCR；暗色工作区、八个选区手柄和底部工具栏。支持原位排版、拖动与调整范围、语言切换、原文对照、固定截图，以及文字和图片复制。 |
+| **截图翻译** | Retina 原始像素与本机 OCR；简洁原生工具条，跟随系统明暗外观。译文默认可选取，排版避让图标与分隔线；支持对照、复制文字，以及“更多”中的图片复制、固定、拖动、重新框选和窗口查看。 |
 | **系统服务** | 在支持文本服务的应用中，通过右键 → 服务调用翻译和朗读。 |
 | **长文本阅读** | 原文按内容增高，到上限后滚动；向下阅读时保留返回原文入口，滚动条使用细滑块。 |
 | **复制与编辑** | 原文、译文和例句可复制；支持常用键盘编辑操作。 |
