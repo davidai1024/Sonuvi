@@ -12,7 +12,7 @@ func makeSolidScreenshot(width: Int, height: Int, gray: CGFloat) -> CGImage {
 
 @MainActor
 func runScreenshotOverlayTests() async {
-    var checks = runScreenshotContainerChecks()+runScreenshotBoundaryChecks()
+    var checks = runScreenshotContainerChecks()+runScreenshotBoundaryChecks()+runScreenshotThinBoundaryChecks()
     func check(_ condition: Bool, _ message: String) { guard condition else { fatalError("FAIL: " + message) }; checks += 1 }
     let size = ScreenshotDisplaySpec.pixelSize(points: CGSize(width: 1512, height: 982), scale: 2)
     check(size.width == 3024 && size.height == 1964, "Retina capture requests two actual pixels per point")
