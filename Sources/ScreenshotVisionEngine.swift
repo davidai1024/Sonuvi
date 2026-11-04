@@ -20,14 +20,13 @@ final class ScreenshotOCRCancellation: @unchecked Sendable {
 
 enum ScreenshotVisionEngine {
     static var needsCPUWorkaround:Bool { ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 }
-    struct ResultValue { let request:VNRecognizeTextRequest;let fullResolution:Bool }
-    static func perform(image:CGImage,original:CGImage,cpuOnly:Bool,cancellation:ScreenshotOCRCancellation) throws -> ResultValue {
+    static func perform(image:CGImage,cpuOnly:Bool,cancellation:ScreenshotOCRCancellation) throws -> VNRecognizeTextRequest {
         let request = VNRecognizeTextRequest()
         // Revision 2 supports both Chinese and English. On macOS 27, revision 3
         // can still compile an ANE model even with an explicit CPU device.
         // Explicit CPU fixtures use the same revision across macOS runners.
         if cpuOnly || needsCPUWorkaround { request.revision = VNRecognizeTextRequestRevision2 }
-        request.recognitionLevel = .accurate;request.recognitionLanguages = ["en-US","zh-Hans","zh-Hant"];request.usesLanguageCorrection = true
+        request.recognitionLevel = .accurate;request.recognitionLanguages = ["zh-Hans","zh-Hant","en-US"];request.usesLanguageCorrection = true
         if cpuOnly || needsCPUWorkaround {
             // usesCPUOnly is deprecated and can be ignored on newer systems.
             // Select the supported CPU device before Vision creates its detector.
@@ -39,6 +38,6 @@ enum ScreenshotVisionEngine {
         }
         try cancellation.register(request)
         try VNImageRequestHandler(cgImage:image).perform([request])
-        return ResultValue(request:request,fullResolution:image.width == original.width && image.height == original.height)
+        return request
     }
 }

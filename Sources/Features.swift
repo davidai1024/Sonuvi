@@ -202,7 +202,7 @@ enum WindowGeometry {
 enum OCRService {
     enum Input { case image(CGImage), file(URL) }
     static func recognize(_ input: Input) async throws -> String { try await recognizeDocument(input).text }
-    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false, maximumDimension: Int? = nil, timing: (@Sendable ([String:Double]) -> Void)? = nil) async throws -> ScreenshotDocument {
+    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false, timing: (@Sendable ([String:Double]) -> Void)? = nil) async throws -> ScreenshotDocument {
         let cancellation = ScreenshotOCRCancellation()
         let work = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
@@ -212,31 +212,10 @@ enum OCRService {
             case .image(let value): image = value
             case .file(let url): image = CGImageSourceCreateWithURL(url as CFURL,nil).flatMap { CGImageSourceCreateImageAtIndex($0,0,nil) }
             }
-            var recognition = image
-            if let image, let maximumDimension, max(image.width,image.height) > maximumDimension {
-                let scale = CGFloat(maximumDimension)/CGFloat(max(image.width,image.height))
-                let w = max(1,Int(CGFloat(image.width)*scale)),h = max(1,Int(CGFloat(image.height)*scale))
-                if let c = CGContext(data:nil,width:w,height:h,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue) {
-                    c.interpolationQuality = .high;c.draw(image,in:CGRect(x:0,y:0,width:w,height:h));recognition = c.makeImage()
-                }
-            }
-            guard let image,let recognition else { throw TranslateError.message("截图图像不可用。") }
+            guard let image else { throw TranslateError.message("截图图像不可用。") }
             let prepared = ProcessInfo.processInfo.systemUptime
-            var result = try ScreenshotVisionEngine.perform(image:recognition,original:image,cpuOnly:cpuOnly,cancellation:cancellation)
-            var usedFullResolutionFallback = false
-            if !result.fullResolution {
-                let observations = result.request.results ?? []
-                let meaningfulTinyText = observations.contains { observation in
-                    guard observation.boundingBox.height * CGFloat(recognition.height) < 11,let text = observation.topCandidates(1).first?.string else {return false}
-                    return text.unicodeScalars.filter {CharacterSet.letters.contains($0)}.count >= 5
-                }
-                let confidence = observations.compactMap {$0.topCandidates(1).first?.confidence}.reduce(0,+)/Float(max(1,observations.count))
-                if observations.isEmpty || meaningfulTinyText || confidence < 0.65 {
-                    try Task.checkCancellation()
-                    result = try ScreenshotVisionEngine.perform(image:image,original:image,cpuOnly:cpuOnly,cancellation:cancellation);usedFullResolutionFallback = true
-                }
-            }
-            let request = result.request,recognized = ProcessInfo.processInfo.systemUptime
+            let request = try ScreenshotVisionEngine.perform(image:image,cpuOnly:cpuOnly,cancellation:cancellation)
+            let recognized = ProcessInfo.processInfo.systemUptime
             try Task.checkCancellation()
             let imageSize = CGSize(width: image.width,height:image.height)
             var protectedBounds: [CGRect] = []
@@ -369,7 +348,7 @@ enum OCRService {
                 return ScreenshotTextLine(text:line.text,bounds:bounds,confidence:line.confidence)
             }
             let document = ScreenshotDocument(lines:refined,imageSize:imageSize,protectedBounds:protectedBounds)
-            timing?(["prepare_seconds":prepared-start,"vision_seconds":recognized-prepared,"geometry_seconds":ProcessInfo.processInfo.systemUptime-recognized,"full_resolution_fallback":usedFullResolutionFallback ? 1 : 0])
+            timing?(["prepare_seconds":prepared-start,"vision_seconds":recognized-prepared,"geometry_seconds":ProcessInfo.processInfo.systemUptime-recognized])
             return document
         }
         return try await withTaskCancellationHandler(operation: { try await work.value },

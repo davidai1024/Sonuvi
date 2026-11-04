@@ -1144,7 +1144,7 @@ else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await run
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
 else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); runMarkdownDocumentTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
-else if CommandLine.arguments.contains("--screenshot-overlay-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotOverlayTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--screenshot-overlay-test") || CommandLine.arguments.contains("--screenshot-ocr-fidelity-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotOverlayTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-performance-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotPerformanceTest() }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-local-inspect") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotLocalInspection() }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-provider-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotProviderTest() }; app.run() } }

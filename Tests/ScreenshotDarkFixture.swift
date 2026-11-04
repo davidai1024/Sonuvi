@@ -2,14 +2,17 @@
 import AppKit
 
 @MainActor
-func makeScreenshotDarkWorkspaceScene() -> CGImage {
+func makeScreenshotDarkWorkspaceScene(record: ((String,CGRect,Bool) -> Void)? = nil) -> CGImage {
     let size = CGSize(width:1900,height:970)
     let ctx = CGContext(data:nil,width:3800,height:1940,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.scaleBy(x:2,y:2); NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext:ctx,flipped:false)
     defer { NSGraphicsContext.restoreGraphicsState() }
     func fill(_ r: CGRect,_ gray: CGFloat) { NSColor(white:gray,alpha:1).setFill();NSBezierPath(rect:r).fill() }
     func text(_ s: String,_ x: CGFloat,_ y: CGFloat,_ pt: CGFloat = 14,_ color: NSColor = .white) {
-        NSAttributedString(string:s,attributes:[.font:NSFont.systemFont(ofSize:pt),.foregroundColor:color]).draw(at:CGPoint(x:x,y:y))
+        let font = NSFont.systemFont(ofSize:pt),value = NSAttributedString(string:s,attributes:[.font:NSFont.systemFont(ofSize:pt),.foregroundColor:color])
+        value.draw(at:CGPoint(x:x,y:y))
+        let measured = value.size()
+        record?(s,CGRect(x:x,y:y+(measured.height-font.capHeight)/2,width:measured.width,height:font.capHeight),s.count == 1)
     }
     func icon(_ s: String,_ x: CGFloat,_ y: CGFloat,_ pt: CGFloat = 16,_ color: NSColor = .lightGray) {
         guard let img = NSImage(systemSymbolName:s,accessibilityDescription:nil)?.withSymbolConfiguration(.init(pointSize:pt,weight:.regular))?.withSymbolConfiguration(.init(paletteColors:[color])) else { return }
@@ -18,6 +21,7 @@ func makeScreenshotDarkWorkspaceScene() -> CGImage {
         ctx.saveGState();NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext:ctx,flipped:false)
         img.draw(in:CGRect(x:x,y:y,width:pt+2,height:pt+2))
+        record?("",CGRect(x:x,y:y,width:pt+2,height:pt+2),true)
         NSGraphicsContext.restoreGraphicsState();ctx.restoreGState()
     }
     fill(CGRect(origin:.zero,size:size),0.14);fill(CGRect(x:65,y:0,width:260,height:875),0.09)
@@ -55,4 +59,17 @@ func makeScreenshotDarkWorkspaceScene() -> CGImage {
     }
     text("Synthetic dark screenshot fixture · anonymous content",365,45,12,.gray)
     return ctx.makeImage()!
+}
+
+// Known drawing coordinates test layout independently of OS-specific OCR spelling.
+@MainActor
+func makeScreenshotDarkFixture() -> (image:CGImage,document:ScreenshotDocument) {
+    var labels: [(String,CGRect)] = [],icons: [CGRect] = []
+    let image = makeScreenshotDarkWorkspaceScene { text,box,icon in
+        let normalized = CGRect(x:box.minX/1900,y:box.minY/970,width:box.width/1900,height:box.height/970)
+        if icon { icons.append(normalized) } else { labels.append((text,normalized)) }
+    }
+    labels.sort { abs($0.1.midY-$1.1.midY) > 0.008 ? $0.1.midY > $1.1.midY : $0.1.minX < $1.1.minX }
+    let regions = labels.enumerated().map { ScreenshotTextRegion(id:$0.offset,text:$0.element.0,bounds:$0.element.1,lineHeight:$0.element.1.height) }
+    return (image,ScreenshotDocument(regions:regions,protectedBounds:icons))
 }
