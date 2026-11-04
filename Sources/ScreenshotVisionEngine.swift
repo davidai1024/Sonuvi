@@ -25,7 +25,8 @@ enum ScreenshotVisionEngine {
         let request = VNRecognizeTextRequest()
         // Revision 2 supports both Chinese and English. On macOS 27, revision 3
         // can still compile an ANE model even with an explicit CPU device.
-        if needsCPUWorkaround { request.revision = VNRecognizeTextRequestRevision2 }
+        // Explicit CPU fixtures use the same revision across macOS runners.
+        if cpuOnly || needsCPUWorkaround { request.revision = VNRecognizeTextRequestRevision2 }
         request.recognitionLevel = .accurate;request.recognitionLanguages = ["zh-Hans","zh-Hant","en-US"];request.usesLanguageCorrection = true
         if cpuOnly || needsCPUWorkaround {
             // usesCPUOnly is deprecated and can be ignored on newer systems.
