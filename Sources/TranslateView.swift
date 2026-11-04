@@ -338,17 +338,19 @@ struct TranslationEditor: NSViewRepresentable {
             }
             owner.onAttributedChange(view.textStorage.map { NSAttributedString(attributedString: $0) })
         }
-        func synchronize(_ view: NSTextView) {
+        @discardableResult
+        func synchronize(_ view: NSTextView) -> Bool {
             let incoming = owner.text
             if incoming == synchronizedText {
                 if !view.hasMarkedText(), let styled = owner.styledText, styled.string == incoming,
-                   let storage = view.textStorage, !storage.isEqual(to: styled) { storage.setAttributedString(styled) }
-                return
+                   let storage = view.textStorage, !storage.isEqual(to: styled) { storage.setAttributedString(styled); return true }
+                return false
             }
             synchronizedText = incoming
             // SwiftUI redraws must not terminate the input method's marked range.
-            if view.hasMarkedText() { pendingReplacement = incoming; return }
+            if view.hasMarkedText() { pendingReplacement = incoming; return false }
             replace(view, with: incoming)
+            return true
         }
         private func replace(_ view: NSTextView, with text: String) {
             guard view.string != text else { return }
@@ -394,8 +396,9 @@ struct TranslationEditor: NSViewRepresentable {
         context.coordinator.owner = self
         guard let editor = scroll.documentView as? NSTextView else { return }
         if let native = editor as? TranslationTextView { native.markdownBacking = markdownBacking; native.onMarkdownPaste = onMarkdownPaste }
-        context.coordinator.synchronize(editor)
-        (editor as? ReadableRichTextView)?.refreshDisplayColors()
+        if context.coordinator.synchronize(editor) {
+            (editor as? ReadableRichTextView)?.refreshDisplayColors()
+        }
         (scroll as? ContentSizedTextScrollView)?.scheduleMeasurement()
         if context.coordinator.lastFocus != focusRequest {
             context.coordinator.lastFocus = focusRequest
@@ -621,6 +624,40 @@ private struct TranslationScrollAppearance: NSViewRepresentable {
 
 struct PlainMarkdownResultView: NSViewRepresentable {
     let markdown: String
+    final class Coordinator {
+        let projection = MarkdownDisplayProjection()
+        let storage = NSTextStorage()
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: .zero)
+        var heights: [CGFloat: CGFloat] = [:]
+        var markdown: String?
+        init() {
+            container.lineFragmentPadding = 0
+            storage.addLayoutManager(layout); layout.addTextContainer(container)
+        }
+        func update(_ value: String, view: NSTextView) {
+            guard markdown != value else { return }
+            let plain = projection.update(value)
+            if let text = view.textStorage, let range = StreamingTextUpdate.apply(plain, to: text) {
+                text.addAttributes([.font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor.labelColor], range: range)
+            }
+            if let range = StreamingTextUpdate.apply(plain, to: storage) {
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 15), range: range)
+                heights.removeAll(keepingCapacity: true)
+            }
+            (view as? TranslationTextView)?.markdownBacking = value
+            markdown = value
+        }
+        func height(width: CGFloat) -> CGFloat {
+            if let cached = heights[width] { return cached }
+            container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+            layout.ensureLayout(for: container)
+            let value = ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY))
+            heights[width] = value
+            return value
+        }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSTextView {
         let view = TranslationTextView()
         view.isEditable = false; view.isSelectable = true; view.isRichText = false
@@ -628,24 +665,15 @@ struct PlainMarkdownResultView: NSViewRepresentable {
         view.textContainer?.lineFragmentPadding = 0
         view.isHorizontallyResizable = false; view.isVerticallyResizable = true
         view.textContainer?.widthTracksTextView = true
+        view.font = .systemFont(ofSize: 15); view.textColor = .labelColor
         return view
     }
     func updateNSView(_ view: NSTextView, context: Context) {
-        let value = MarkdownDocument(markdown).plain
-        if view.string != value { view.string = value }
-        view.font = .systemFont(ofSize: 15); view.textColor = .labelColor
-        (view as? TranslationTextView)?.markdownBacking = markdown
+        context.coordinator.update(markdown, view: view)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
         guard let width = proposal.width, width > 0 else { return nil }
-        // SwiftUI asks for several hypothetical widths. Measuring in the live
-        // text container leaves the final display wrapped at a probe width.
-        let storage = NSTextStorage(attributedString: nsView.attributedString())
-        let layout = NSLayoutManager()
-        let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        storage.addLayoutManager(layout); layout.addTextContainer(container)
-        layout.ensureLayout(for: container)
-        return CGSize(width: width, height: ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY)))
+        // Keep hypothetical-width measurements separate from the live container.
+        return CGSize(width: width, height: context.coordinator.height(width: width))
     }
 }

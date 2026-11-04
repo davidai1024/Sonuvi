@@ -317,8 +317,9 @@ final class AppModel: ObservableObject {
                         return try await DeepSeekClient.stream(req, onDelta: update)
                     }, onUpdate: { [weak self] value in
                         guard let self, self.currentID == id, !Task.isCancelled else { return }
-                        self.result = value
-                        self.resultAttributed = work.attributedOutput
+                        if self.result != value { self.result = value }
+                        let styled = work.attributedOutput
+                        if self.resultAttributed != styled { self.resultAttributed = styled }
                     }, onProgress: { [weak self] part, total, retrying in
                         guard let self, self.currentID == id, !Task.isCancelled else { return }
                         self.statusText = retrying ? "服务繁忙或连接中断，正在自动重试第 \(part)/\(total) 段…"

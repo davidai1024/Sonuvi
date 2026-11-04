@@ -3,16 +3,23 @@ import AppKit
 
 // A plain-text projection of a Markdown document with UTF-16 source positions.
 // The original document remains the source of truth during display and editing.
+struct MarkdownFence: Equatable {
+    let character: Character
+    let length: Int
+}
+
 struct MarkdownDocument {
     let markdown: String
     let plain: String
     private let positions: [NSRange]
     private let codePositions: [Bool]
+    let endingFence: MarkdownFence?
 
-    init(_ markdown: String) {
+    init(_ markdown: String, trackingPositions: Bool = true, initialFence: MarkdownFence? = nil) {
         self.markdown = markdown
         var text = "", locations: [NSRange] = [], codeFlags: [Bool] = []
         func append(_ value: String, source: NSRange, original: String, code: Bool = false) {
+            if !trackingPositions { text += value; return }
             let raw = Array(original.utf16), visible = Array(value.utf16)
             var deleted = Set<Int>(), inserted = Set<Int>()
             if raw != visible {
@@ -29,7 +36,7 @@ struct MarkdownDocument {
             }
             text += value
         }
-        var offset = 0, fence: Character?, fenceLength = 0
+        var offset = 0, fence = initialFence?.character, fenceLength = initialFence?.length ?? 0
         let lines = markdown.components(separatedBy: "\n")
         for (index, line) in lines.enumerated() {
             let length = (line as NSString).length
@@ -67,6 +74,7 @@ struct MarkdownDocument {
             if index < lines.count - 1 { append("\n", source: NSRange(location: offset + length, length: 1), original: "\n") }
         }
         plain = text; positions = locations; codePositions = codeFlags
+        endingFence = fence.map { MarkdownFence(character: $0, length: fenceLength) }
     }
 
     private func sourceRange(_ range: NSRange) -> NSRange? {

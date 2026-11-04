@@ -280,6 +280,22 @@ enum DeepSeekClient {
             default: throw TranslateError.message("DeepSeek 服务返回 HTTP \(http.statusCode)，请检查模型名称和设置。")
             }
         }
+        // Network decoding never waits for a main-thread redraw. Keep only the
+        // newest pending snapshot and deliver at most once per display interval.
+        let (updates, continuation) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let delivery = Task { @MainActor in
+            var last: TimeInterval = 0
+            for await value in updates {
+                let wait = 1.0 / 30 - (ProcessInfo.processInfo.systemUptime - last)
+                if wait > 0 {
+                    do { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+                    catch { return }
+                }
+                guard !Task.isCancelled else { return }
+                onDelta(value); last = ProcessInfo.processInfo.systemUptime
+            }
+        }
+        defer { continuation.finish(); delivery.cancel() }
         var result = ""
         var ended = false
         var lastEmission: TimeInterval = 0
@@ -295,7 +311,7 @@ enum DeepSeekClient {
                 if let delta = choice.delta.content {
                     result += delta
                     let now = ProcessInfo.processInfo.systemUptime
-                    if now - lastEmission >= 0.05 { await onDelta(result); lastEmission = now }
+                    if now - lastEmission >= 1.0 / 30 { continuation.yield(result); lastEmission = now }
                 }
                 if choice.finish_reason == "stop" { ended = true }
             }
@@ -305,7 +321,9 @@ enum DeepSeekClient {
             throw TranslateError.message("翻译连接中断，请手动重试。")
         }
         guard ended && !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TranslateError.message("响应不完整，请重试。") }
-        await onDelta(result)
+        continuation.yield(result); continuation.finish()
+        await delivery.value
+        try Task.checkCancellation()
         return result
     }
 }
