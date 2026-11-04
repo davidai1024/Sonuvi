@@ -117,7 +117,11 @@ func runScreenshotWorkspaceFixture() {
                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     context.setFillColor(NSColor(white: 0.91, alpha: 1).cgColor); context.fill(CGRect(x: 0, y: 0, width: screen.frame.width*2, height: screen.frame.height*2))
     context.draw(image, in: CGRect(x: (rect.minX-screen.frame.minX)*2, y: (rect.minY-screen.frame.minY)*2, width: rect.width*2, height: rect.height*2))
-    let snapshot = FrozenCapture(frame: screen.frame, image: context.makeImage()!)
+    var displays = [CapturedDisplay(frame: screen.frame, image: context.makeImage()!)]
+    for other in NSScreen.screens where other !== screen {
+        displays.append(CapturedDisplay(frame: other.frame, image: makeSolidScreenshot(width: Int(other.frame.width*2), height: Int(other.frame.height*2), gray: 0.91)))
+    }
+    let snapshot = FrozenCapture(displays: displays)
     let cropped = snapshot.crop(rect)!
     let controller = ScreenshotTranslationController(image: cropped, selection: rect, modelName: "fixture", snapshot: snapshot)
     controller.model.targetLanguage = diagram ? .chinese : .english
@@ -148,4 +152,32 @@ func runScreenshotWorkspaceFixture() {
     }
     controller.onClose = { app.terminate(nil) }; screenshotWorkspaceFixture = controller
     controller.show(); app.activate(ignoringOtherApps: true)
+}
+
+@MainActor
+func runScreenshotProviderTest() async {
+    do {
+        let image = makeScreenshotWorkspaceScene(diagram: false)
+        let document = try await OCRService.recognizeDocument(.image(image), cpuOnly: true)
+        let model = ScreenshotOverlayModel(); model.document = document
+        let direction = model.resolvedTarget.direction!
+        let work = ScreenshotTranslationWork(document: document, direction: direction)
+        let key = try KeyStore.read(allowInteraction: true)
+        let name = UserDefaults.standard.string(forKey: "modelName") ?? "deepseek-flash"
+        let start = Date(); var requests = 0
+        try await work.run(send: { text, direction, update in
+            requests += 1
+            return try await DeepSeekClient.stream(DeepSeekClient.screenshotRequest(text: text, direction: direction, model: name, key: key), onDelta: update)
+        }, onUpdate: { _ in }, onProgress: { _,_,_ in })
+        guard work.completed.count == document.regions.count else { throw TranslateError.message("Live screenshot test returned incomplete regions") }
+        let titles = document.regions.filter { $0.text.contains("DeepSeek") || $0.text.contains("CNN-Based") }
+        guard !titles.isEmpty, titles.allSatisfy({ work.completed[$0.id] == $0.text }) else { throw TranslateError.message("Existing English filenames changed") }
+        let translated = work.completed.values.joined(separator: "\n").lowercased()
+        guard translated.contains("quick access"), translated.contains("new"), translated.contains("open") else { throw TranslateError.message("Expected translated UI labels missing") }
+        guard let rendered = ScreenshotImageRenderer.render(image: image, size: CGSize(width: 1040, height: 650), document: document, values: work.completed, original: false),
+              let png = NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:]) else { throw TranslateError.message("Live screenshot layout overflowed") }
+        try png.write(to: URL(fileURLWithPath: "/tmp/sonuvi-live-screenshot-test.png"))
+        print("PASS: live DeepSeek screenshot translation, \(document.regions.count) regions, \(requests) requests, \(String(format: "%.2f", Date().timeIntervalSince(start))) s; English filenames preserved; 2080x1300 PNG rendered")
+        exit(0)
+    } catch { fputs("Live screenshot test failed: \(error.localizedDescription)\n", stderr); exit(1) }
 }

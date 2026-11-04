@@ -1145,6 +1145,7 @@ else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
 else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); runMarkdownDocumentTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-overlay-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotOverlayTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--screenshot-provider-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotProviderTest() }; app.run() } }
 else if CommandLine.arguments.contains("--retina-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; runRetinaCaptureTest(); app.run() } }
 else if Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceSourceFixture") as? Bool == true { MainActor.assumeIsolated { runScreenshotSourceFixture(); NSApplication.shared.run() } }
 else if (CommandLine.arguments.contains("--screenshot-workspace-fixture") || Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceFixture") as? Bool == true) { MainActor.assumeIsolated { runScreenshotWorkspaceFixture(); NSApplication.shared.run() } }
