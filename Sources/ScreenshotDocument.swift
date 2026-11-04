@@ -38,7 +38,9 @@ struct ScreenshotTextRegion: Identifiable {
     let text: String
     let bounds: CGRect
     let lineHeight: CGFloat
+    var lineBounds: [CGRect] = []
     var direction: Direction { TextRules.direction(text) }
+    var sourceBounds: [CGRect] { lineBounds.isEmpty ? [bounds] : lineBounds }
 }
 struct ScreenshotDocument {
     let regions: [ScreenshotTextRegion]
@@ -70,7 +72,7 @@ struct ScreenshotDocument {
         regions = blocks.enumerated().map { index, block in
             let heights = block.lines.map { $0.bounds.height }.sorted()
             return ScreenshotTextRegion(id: index, text: block.lines.map(\.text).joined(separator: "\n"), bounds: block.bounds,
-                                        lineHeight: heights[heights.count / 2])
+                                        lineHeight: heights[heights.count / 2], lineBounds: block.lines.map(\.bounds))
         }
     }
     init(regions: [ScreenshotTextRegion]) { self.regions = regions }
@@ -101,7 +103,15 @@ enum ScreenshotLayout {
             return ScreenshotTextPlacement(frame: .zero, fontSize: 9, contentHeight: 0, scrolls: false)
         }
         let gap: CGFloat = 3, padding: CGFloat = 4
-        let preferred = min(36, max(11, region.lineHeight * size.height * 1.15))
+        let sourceWidth = region.text.components(separatedBy: .newlines).map {
+            NSAttributedString(string: $0, attributes: [.font: NSFont.systemFont(ofSize: 100)]).size().width / 100
+        }.max() ?? 1
+        // Vision's vertical box includes language-dependent padding. Estimate
+        // point size from both glyph width and height, so a 12 pt Chinese label
+        // does not become a 20 pt English label after translation.
+        let fromWidth = region.bounds.width * size.width / max(0.1, sourceWidth)
+        let fromHeight = region.lineHeight * size.height * 1.25
+        let preferred = min(40, max(8, min(fromWidth, fromHeight)))
         if original.height <= region.lineHeight * size.height * 1.6 + padding {
             // Short UI labels may need more horizontal space when Chinese
             // becomes English. Stop before other text in the same row.
@@ -114,7 +124,7 @@ enum ScreenshotLayout {
             let natural = text.components(separatedBy: .newlines).map {
                 (NSAttributedString(string: $0, attributes: [.font: NSFont.systemFont(ofSize: preferred)]).size().width)
             }.max() ?? original.width
-            let extraWidth = min(max(0, right - original.minX), min(original.width * 2.5, natural + padding))
+            let extraWidth = min(max(0, right - original.minX), min(max(original.width * 5, preferred * 12), natural + padding))
             original.size.width = max(original.width, extraWidth)
         }
         var below: CGFloat = 0
@@ -125,7 +135,7 @@ enum ScreenshotLayout {
         }
         // Expand down only into empty space, never over the next text block.
         let maximumHeight = max(original.height, min(original.maxY - below, max(original.height * 2.5, 48)))
-        var lower: CGFloat = 9, upper = preferred
+        var lower: CGFloat = min(9, preferred), upper = preferred
         for _ in 0..<8 {
             let middle = (lower + upper) / 2
             if measuredHeight(text, width: original.width - padding, fontSize: middle) + padding <= maximumHeight { lower = middle }
@@ -138,8 +148,8 @@ enum ScreenshotLayout {
         return ScreenshotTextPlacement(frame: frame, fontSize: font, contentHeight: content, scrolls: content > frame.height + 0.5)
     }
     static func toolbarFrame(selection: CGRect, screen: CGRect, size: CGSize) -> CGRect {
-        let x = max(screen.minX + 8, min(selection.maxX - size.width, screen.maxX - size.width - 8))
-        let y = selection.maxY + 8 + size.height <= screen.maxY ? selection.maxY + 8 : max(screen.minY + 8, selection.minY - size.height - 8)
+        let x = max(screen.minX + 8, min(selection.midX - size.width / 2, screen.maxX - size.width - 8))
+        let y = selection.minY - size.height - 8 >= screen.minY + 8 ? selection.minY - size.height - 8 : max(screen.minY + 8, selection.minY + 8)
         return CGRect(x: x, y: min(y, screen.maxY - size.height - 8), width: size.width, height: size.height)
     }
 }

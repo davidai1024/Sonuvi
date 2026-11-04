@@ -619,5 +619,22 @@
   "复制译文文字": "Copy Translation Text",
   "复制译文图片": "Copy Translated Image",
   "复制原图": "Copy Original Image",
-  "译文过长或图片暂不可用，请先复制文字。": "The translation is too long or the image is unavailable. Please copy the text instead."
+  "译文过长或图片暂不可用，请先复制文字。": "The translation is too long or the image is unavailable. Please copy the text instead.",
+  "自动识别语言": "Detect Language",
+  "自动识别": "Auto Detect",
+  "自动互译": "Auto Translate",
+  "中英自动互译": "Chinese ↔ English",
+  "原文语言": "Source Language",
+  "译文语言": "Target Language",
+  "交换语言": "Swap Languages",
+  "对照": "Original",
+  "切换原文与译文；按住 Option 临时查看原文": "Switch original/translation; hold Option to peek at the original",
+  "选择文字": "Select Text",
+  "复制图片": "Copy Image",
+  "固定截图": "Pin Screenshot",
+  "重新框选": "Reselect",
+  "复制文字": "Copy Text",
+  "截图翻译工作区": "Screenshot Translation Workspace",
+  "松开以更新选区": "Release to update the region",
+  "翻译完成 · 拖动选区移动 · Esc 关闭": "Done · Drag to move · Esc to close"
 }

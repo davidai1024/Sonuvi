@@ -878,7 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     guard self.ocrID == id else { return }
                     guard let image = frozen.crop(rect) else { throw TranslateError.message("截图区域过大或无效，请重新框选。") }
                     self.model.ocrBusy = false; self.model.ocrRecognizing = false
-                    let overlay = ScreenshotTranslationController(image: image, selection: rect, modelName: self.model.modelName)
+                    let overlay = ScreenshotTranslationController(image: image, selection: rect, modelName: self.model.modelName, snapshot: frozen)
                     self.screenshotOverlay = overlay
                     self.model.usage.touch()
                     overlay.onCompleted = { [weak self] document in self?.model.usage.translation(text: document.text, kind: .sentence, app: origin, cached: false) }
@@ -1143,6 +1143,8 @@ else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsol
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-overlay-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotOverlayTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--retina-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; runRetinaCaptureTest(); app.run() } }
+else if Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceSourceFixture") as? Bool == true { MainActor.assumeIsolated { runScreenshotSourceFixture(); NSApplication.shared.run() } }
+else if (CommandLine.arguments.contains("--screenshot-workspace-fixture") || Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceFixture") as? Bool == true) { MainActor.assumeIsolated { runScreenshotWorkspaceFixture(); NSApplication.shared.run() } }
 else if (CommandLine.arguments.contains("--screenshot-overlay-fixture") || Bundle.main.object(forInfoDictionaryKey: "ScreenshotOverlayFixture") as? Bool == true) { MainActor.assumeIsolated { runScreenshotOverlayFixture(); NSApplication.shared.run() } }
 else if CommandLine.arguments.contains("--streaming-display-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runStreamingDisplayTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--live-streaming-profile") { Task { @MainActor in exit(await runTranslationConnectionTest(profile: true)) }; dispatchMain() }
