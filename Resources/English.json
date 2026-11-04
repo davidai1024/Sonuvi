@@ -636,5 +636,6 @@
   "复制文字": "Copy Text",
   "截图翻译工作区": "Screenshot Translation Workspace",
   "松开以更新选区": "Release to update the region",
-  "翻译完成 · 拖动选区移动 · Esc 关闭": "Done · Drag to move · Esc to close"
+  "翻译完成 · 拖动选区移动 · Esc 关闭": "Done · Drag to move · Esc to close",
+  "自动选择译文语言": "Choose Target Automatically"
 }

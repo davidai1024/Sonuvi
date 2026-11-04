@@ -153,6 +153,11 @@ func runScreenshotOverlayTests() async {
     check(["Quick Access", "回收站", "研究报告.pdf"].allSatisfy(ScreenshotTranslationRules.needsTranslation), "UI labels and document titles remain translatable")
     let list = try! await OCRService.recognizeDocument(.image(makeScreenshotWorkspaceScene(diagram: false)), cpuOnly: true)
     check(list.regions.count > 30, "Dense file-list OCR retains independent label and metadata slots")
+    let languageModel = ScreenshotOverlayModel(); languageModel.document = list
+    check(languageModel.detectedSource == .chinese && languageModel.resolvedTarget == .english,
+          "A Chinese interface uses one English target across the selection, retaining existing English filenames")
+    languageModel.targetLanguage = .chinese
+    check(languageModel.resolvedTarget == .chinese, "An explicit target overrides automatic screenshot language detection")
     check(!list.regions.contains { $0.text.contains("我的设备") && $0.text.contains("DeepSeek") }, "Large horizontal gaps do not merge titles with table columns")
     if let header = list.regions.first(where: { $0.text == "文件位置" }) {
         let p = ScreenshotLayout.placement(region: header, text: "Location", regions: list.regions, size: CGSize(width: 1040, height: 650))

@@ -65,17 +65,17 @@ private struct ScreenshotWorkspaceToolbar: View {
                             languageChanged()
                         }
                     }
-                } label: { Text(L10n.text(model.sourceLanguage == .automatic ? "自动识别" : model.sourceLanguage.rawValue)) }
+                } label: { Text(L10n.text(model.document == nil && model.sourceLanguage == .automatic ? "自动识别" : model.detectedSource.rawValue)) }
                 .frame(width: 78).help(L10n.text("原文语言"))
                 icon("arrow.left.arrow.right", "交换语言", action: swap)
             }
             Menu {
                 ForEach(ScreenshotLanguage.allCases, id: \.self) { language in
-                    Button(L10n.text(language == .automatic ? "中英自动互译" : language.rawValue)) {
+                    Button(L10n.text(language == .automatic ? "自动选择译文语言" : language.rawValue)) {
                         model.targetLanguage = language; languageChanged()
                     }
                 }
-            } label: { Text(L10n.text(model.targetLanguage == .automatic ? "自动互译" : model.targetLanguage.rawValue)) }
+            } label: { Text(L10n.text(model.document == nil && model.targetLanguage == .automatic ? "译文语言" : model.resolvedTarget.rawValue)) }
             .frame(width: 84).help(L10n.text("译文语言"))
             Divider().frame(height: 18)
             Toggle(L10n.text("对照"), isOn: $model.original).toggleStyle(.switch).controlSize(.mini)
@@ -337,18 +337,12 @@ final class ScreenshotTranslationController {
         }
     }
     private var direction: Direction? {
-        if let target = model.targetLanguage.direction { return target }
-        if model.sourceLanguage == .chinese { return .toEnglish }
-        if model.sourceLanguage == .english { return .toChinese }
-        return nil
+        model.resolvedTarget.direction
     }
     func languageChanged() { task?.cancel(); revision = UUID(); work = nil; model.completed = [:]; model.visible = [:]; model.original = false; start() }
     private func swapLanguages() {
-        let english = model.document?.regions.filter { $0.direction == .toChinese }.count ?? 0
-        let chinese = model.document?.regions.filter { $0.direction == .toEnglish }.count ?? 0
-        let inferred = direction ?? (chinese > english ? .toEnglish : .toChinese)
-        let oldTarget = model.targetLanguage == .automatic ? (inferred == .toEnglish ? ScreenshotLanguage.english : .chinese) : model.targetLanguage
-        let oldSource = model.sourceLanguage == .automatic ? (oldTarget == .chinese ? ScreenshotLanguage.english : .chinese) : model.sourceLanguage
+        let oldTarget = model.resolvedTarget
+        let oldSource = model.detectedSource
         model.sourceLanguage = oldTarget; model.targetLanguage = oldSource; languageChanged()
     }
     func reselect() {

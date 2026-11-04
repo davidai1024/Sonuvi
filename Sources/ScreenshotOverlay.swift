@@ -22,6 +22,16 @@ final class ScreenshotOverlayModel: ObservableObject {
     @Published var peeking = false
     @Published var editing = false
     var showsOriginal: Bool { original || peeking || busy || editing }
+    var detectedSource: ScreenshotLanguage {
+        if sourceLanguage != .automatic { return sourceLanguage }
+        let regions = document?.regions.filter { ScreenshotTranslationRules.needsTranslation($0.text) } ?? []
+        let chinese = regions.filter { $0.direction == .toEnglish }.reduce(0) { $0 + $1.text.count }
+        let english = regions.filter { $0.direction == .toChinese }.reduce(0) { $0 + $1.text.count }
+        return chinese > english ? .chinese : .english
+    }
+    var resolvedTarget: ScreenshotLanguage {
+        targetLanguage == .automatic ? (detectedSource == .chinese ? .english : .chinese) : targetLanguage
+    }
     var copyText: String {
         guard let document else { return "" }
         return original ? document.text : document.regions.compactMap { completed[$0.id] }.joined(separator: "\n\n")
