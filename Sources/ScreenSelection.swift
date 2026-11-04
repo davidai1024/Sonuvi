@@ -15,22 +15,69 @@ enum CaptureGeometry {
 
 // The pixels and their AppKit coordinate space travel together. Both the
 // selection backdrop and OCR crop use this same immutable frame.
-struct FrozenCapture {
+struct CapturedDisplay {
     let frame: CGRect
     let image: CGImage
+    var scale: CGFloat { max(CGFloat(image.width) / frame.width, CGFloat(image.height) / frame.height) }
     func pixelRect(_ selection: CGRect) -> CGRect {
         let clipped = selection.intersection(frame)
         guard !clipped.isNull, !clipped.isEmpty else { return .zero }
-        let sx = CGFloat(image.width) / frame.width
-        let sy = CGFloat(image.height) / frame.height
-        return CGRect(x: (clipped.minX - frame.minX) * sx,
-                      y: (frame.maxY - clipped.maxY) * sy,
-                      width: clipped.width * sx, height: clipped.height * sy).integral
+        return CGRect(x: (clipped.minX - frame.minX) * CGFloat(image.width) / frame.width,
+                      y: (frame.maxY - clipped.maxY) * CGFloat(image.height) / frame.height,
+                      width: clipped.width * CGFloat(image.width) / frame.width,
+                      height: clipped.height * CGFloat(image.height) / frame.height).integral
             .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
     func crop(_ selection: CGRect) -> CGImage? {
         let rect = pixelRect(selection)
         return rect.isEmpty ? nil : image.cropping(to: rect)
+    }
+}
+
+struct FrozenCapture {
+    let frame: CGRect
+    let displays: [CapturedDisplay]
+    init(frame: CGRect, image: CGImage) { self.frame = frame; displays = [CapturedDisplay(frame: frame, image: image)] }
+    init(displays: [CapturedDisplay]) {
+        self.displays = displays
+        frame = displays.reduce(CGRect.null) { $0.union($1.frame) }
+    }
+    func pixelRect(_ selection: CGRect) -> CGRect { displays.first?.pixelRect(selection) ?? .zero }
+    func alignedRect(_ selection: CGRect) -> CGRect {
+        let clipped = selection.intersection(frame)
+        guard !clipped.isNull, !clipped.isEmpty else { return .zero }
+        if let display = displays.first(where: { $0.frame.contains(clipped) }) {
+            let pixel = display.pixelRect(clipped)
+            let sx = CGFloat(display.image.width) / display.frame.width, sy = CGFloat(display.image.height) / display.frame.height
+            return CGRect(x: display.frame.minX + pixel.minX / sx, y: display.frame.maxY - pixel.maxY / sy,
+                          width: pixel.width / sx, height: pixel.height / sy)
+        }
+        let scale = displays.map(\.scale).max() ?? 1
+        let pixel = CGRect(x: clipped.minX * scale, y: clipped.minY * scale, width: clipped.width * scale, height: clipped.height * scale).integral
+        return CGRect(x: pixel.minX / scale, y: pixel.minY / scale, width: pixel.width / scale, height: pixel.height / scale)
+    }
+    func crop(_ selection: CGRect) -> CGImage? {
+        let clipped = selection.intersection(frame)
+        guard !clipped.isNull, !clipped.isEmpty else { return nil }
+        // Most selections stay on one display: return its actual pixels without
+        // composing, scaling, JPEG encoding or resampling the image.
+        if let display = displays.first(where: { $0.frame.contains(clipped) }) { return display.crop(clipped) }
+        let pieces = displays.filter { !$0.frame.intersection(clipped).isEmpty && !$0.frame.intersection(clipped).isNull }
+        guard let scale = pieces.map(\.scale).max() else { return nil }
+        let width = Int(ceil(clipped.width * scale)), height = Int(ceil(clipped.height * scale))
+        guard width > 0, height > 0, Double(width) * Double(height) <= 64_000_000,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .none
+        for display in pieces {
+            let part = display.frame.intersection(clipped)
+            if let image = display.crop(part) {
+                context.draw(image, in: CGRect(x: (part.minX - clipped.minX) * scale, y: (part.minY - clipped.minY) * scale,
+                                               width: part.width * scale, height: part.height * scale))
+            }
+        }
+        return context.makeImage()
     }
 }
 
@@ -53,7 +100,7 @@ final class ScreenSelection {
                     panel.level = .screenSaver; panel.hidesOnDeactivate = false
                     panel.animationBehavior = .none
                     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                    let view = SelectionView(frame: NSRect(origin: .zero, size: screen.frame.size))
+                    let view = SelectionView(frame: NSRect(origin: .zero, size: screen.frame.size), scale: screen.backingScaleFactor)
                     view.layer?.contents = snapshot.crop(screen.frame)
                     view.layer?.contentsGravity = .resize
                     view.changed = { [weak self] point, ended in self?.drag(point, ended: ended) }
@@ -102,9 +149,12 @@ private final class SelectionView: NSView {
     private let shade = CAShapeLayer()
     private let border = CAShapeLayer()
     override var acceptsFirstResponder: Bool { true }
-    override init(frame: NSRect) {
+    init(frame: NSRect, scale: CGFloat) {
         super.init(frame: frame)
         wantsLayer = true
+        layer?.contentsScale = scale
+        layer?.magnificationFilter = .nearest; layer?.minificationFilter = .nearest
+        shade.contentsScale = scale; border.contentsScale = scale
         shade.fillColor = NSColor.black.withAlphaComponent(0.24).cgColor
         shade.fillRule = .evenOdd
         border.fillColor = NSColor.clear.cgColor

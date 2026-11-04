@@ -64,6 +64,9 @@ final class AppModel: ObservableObject {
     @Published var result = ""
     @Published var sourceAttributed: NSAttributedString?
     @Published var resultAttributed: NSAttributedString?
+    @Published var screenshotPresentation = ScreenshotPresentation(rawValue: UserDefaults.standard.string(forKey: "screenshotPresentation") ?? "") ?? .overlay {
+        didSet { persist(screenshotPresentation.rawValue, forKey: "screenshotPresentation") }
+    }
     @Published var word: WordResult?
     @Published var inputKind: InputKind = .auto {
         didSet { if oldValue != inputKind { cancel(); result = ""; word = nil } }

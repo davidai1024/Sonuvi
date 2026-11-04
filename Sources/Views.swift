@@ -251,6 +251,13 @@ struct SettingsView: View {
                 rowDivider
                 SettingsRow(title: "完整句子", detail: "流式显示译文，保留段落。", symbol: "text.alignleft") { LText("译文卡片").foregroundStyle(.secondary) }
             }
+            rows("截图翻译") {
+                SettingsRow(title: "截图结果", detail: "在截图原位置覆盖译文，也可使用独立翻译窗口。", symbol: "viewfinder") {
+                    Picker(L10n.text("截图结果"), selection: $model.screenshotPresentation) {
+                        ForEach(ScreenshotPresentation.allCases, id: \.self) { LText($0.rawValue).tag($0) }
+                    }.labelsHidden().frame(width: 132)
+                }
+            }
             LText("可以在翻译窗口手动切换展示方式。只有主动发起翻译时，原文才会发送至 DeepSeek。").font(MuseLayout.detail).foregroundStyle(.secondary)
         }
     }

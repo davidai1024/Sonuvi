@@ -201,11 +201,13 @@ enum WindowGeometry {
 
 enum OCRService {
     enum Input { case image(CGImage), file(URL) }
-    static func recognize(_ input: Input) async throws -> String {
+    static func recognize(_ input: Input) async throws -> String { try await recognizeDocument(input).text }
+    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false) async throws -> ScreenshotDocument {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
         request.usesLanguageCorrection = true
+        if cpuOnly { request.usesCPUOnly = true } // Deterministic OCR fixtures on CI without a Metal device.
         let work = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             let handler: VNImageRequestHandler
@@ -215,8 +217,12 @@ enum OCRService {
             }
             try handler.perform([request])
             try Task.checkCancellation()
-            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let lines = (request.results ?? []).compactMap { observation -> ScreenshotTextLine? in
+                guard let candidate = observation.topCandidates(1).first,
+                      !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                return ScreenshotTextLine(text: candidate.string, bounds: observation.boundingBox, confidence: candidate.confidence)
+            }
+            return ScreenshotDocument(lines: lines)
         }
         return try await withTaskCancellationHandler(operation: { try await work.value },
                                                       onCancel: { request.cancel(); work.cancel() })
@@ -228,33 +234,48 @@ enum OCRService {
         guard CGPreflightScreenCaptureAccess() else {
             completion(.failure(TranslateError.message("截图翻译需要屏幕录制权限，请在设置中授权后重试。"))); return
         }
-        let screens = NSScreen.screens.map(\.frame)
-        guard let first = screens.first else {
-            completion(.failure(TranslateError.message("没有可用的屏幕。"))); return
+        let screens = NSScreen.screens.map { screen -> ScreenshotDisplaySpec in
+            ScreenshotDisplaySpec(id: (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0,
+                                  frame: screen.frame, scale: screen.backingScaleFactor)
         }
-        let frame = screens.dropFirst().reduce(first) { $0.union($1) }
-        let rect = CaptureGeometry.displayRect(frame, primaryTop: first.maxY)
-        let deliver: (Result<CGImage, Error>) -> Void = { result in
-            // Completion must run while a menu is tracking, before creating any
-            // MainActor Task. Only dismiss our menus AFTER the pixels are saved.
+        guard let first = screens.first else { completion(.failure(TranslateError.message("没有可用的屏幕。"))); return }
+        let deliver: (Result<FrozenCapture, Error>) -> Void = { result in
+            // A native menu may still be tracking. Deliver before dismissing it,
+            // through common run-loop modes rather than a MainActor Task.
             CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
                 MainActor.assumeIsolated {
-                    guard NSScreen.screens.map(\.frame) == screens else {
-                        completion(.failure(CancellationError())); return
-                    }
-                    completion(result.map { FrozenCapture(frame: frame, image: $0) })
+                    guard NSScreen.screens.map(\.frame) == screens.map(\.frame) else { completion(.failure(CancellationError())); return }
+                    completion(result)
                 }
             }
             CFRunLoopWakeUp(CFRunLoopGetMain())
         }
-        if #available(macOS 15.2, *) {
-            SCScreenshotManager.captureImage(in: rect) { image, error in
-                if let image { deliver(.success(image)) }
-                else { deliver(.failure(error ?? TranslateError.message("无法截取屏幕，请重试。"))) }
+        if #available(macOS 14.0, *) {
+            SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
+                guard let content else { deliver(.failure(error ?? TranslateError.message("无法截取屏幕，请重试。"))); return }
+                let collector = ScreenshotCaptureCollector(count: screens.count, completion: deliver)
+                for (index, screen) in screens.enumerated() {
+                    guard let display = content.displays.first(where: { $0.displayID == screen.id }) else {
+                        collector.receive(index: index, result: .failure(TranslateError.message("屏幕已变化，请重新截图。"))); continue
+                    }
+                    let filter = SCContentFilter(display: display, excludingWindows: [])
+                    let configuration = SCStreamConfiguration()
+                    let size = ScreenshotDisplaySpec.pixelSize(points: filter.contentRect.size,
+                                                               scale: max(screen.scale, CGFloat(filter.pointPixelScale)))
+                    configuration.width = size.width; configuration.height = size.height
+                    configuration.captureResolution = .best; configuration.scalesToFit = false
+                    configuration.showsCursor = false
+                    SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in
+                        if let image { collector.receive(index: index, result: .success(CapturedDisplay(frame: screen.frame, image: image))) }
+                        else { collector.receive(index: index, result: .failure(error ?? TranslateError.message("无法截取屏幕，请重试。"))) }
+                    }
+                }
             }
         } else {
+            let frame = screens.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+            let rect = CaptureGeometry.displayRect(frame, primaryTop: first.frame.maxY)
             Task.detached {
-                do { deliver(.success(try await legacySnapshot(rect))) }
+                do { deliver(.success(FrozenCapture(frame: frame, image: try await legacySnapshot(rect)))) }
                 catch { deliver(.failure(error)) }
             }
         }
