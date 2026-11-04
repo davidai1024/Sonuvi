@@ -176,7 +176,7 @@ private struct ScreenshotToolbar: View {
                 Spacer(minLength: 4)
                 Picker(L10n.text("显示内容"), selection: $model.original) {
                     LText("译文").tag(false); LText("原文").tag(true)
-                }.pickerStyle(.segmented).controlSize(.small).frame(width: 152).disabled(model.document == nil)
+                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 152).disabled(model.document == nil)
                 Button(action: close) { Image(systemName: "xmark").frame(width: 20, height: 20) }
                     .buttonStyle(.plain).help(L10n.text("关闭截图翻译 · Esc")).accessibilityLabel(L10n.text("关闭截图翻译"))
             }
