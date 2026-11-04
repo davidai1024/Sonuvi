@@ -22,7 +22,9 @@ final class ScreenshotTranslationWork {
         func commit(_ region: ScreenshotTextRegion, _ value: String) throws {
             let plain = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !plain.isEmpty else { throw TranslateError.message("部分译文未能完整返回，请重试。") }
-            completed[region.id] = plain
+            for alias in document.regions where alias.text == region.text && (forcedDirection ?? alias.direction) == (forcedDirection ?? region.direction) {
+                completed[alias.id] = plain
+            }
             onUpdate(completed); onProgress(completed.count, document.regions.count, false)
         }
         func single(_ region: ScreenshotTextRegion) async throws {
@@ -48,7 +50,8 @@ final class ScreenshotTranslationWork {
         }
         do {
             for direction in [Direction.toChinese, .toEnglish] {
-                var pending = document.regions.filter { (forcedDirection ?? $0.direction) == direction && completed[$0.id] == nil }
+                var seen = Set<String>()
+                var pending = document.regions.filter { (forcedDirection ?? $0.direction) == direction && completed[$0.id] == nil && seen.insert($0.text).inserted }
                 while !pending.isEmpty {
                     try Task.checkCancellation()
                     var batch: [ScreenshotTextRegion] = []; var size = 0

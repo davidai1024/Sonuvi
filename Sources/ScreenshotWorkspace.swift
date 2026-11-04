@@ -40,72 +40,75 @@ enum ScreenshotWorkspaceGeometry {
     }
 }
 
-private let screenshotCoral = NSColor(srgbRed: 0.94, green: 0.35, blue: 0.30, alpha: 1)
-
-private struct ScreenshotWorkspaceToolbar: View {
-    @ObservedObject var model: ScreenshotOverlayModel
-    let compact: Bool
-    let languageChanged: () -> Void
-    let swap: () -> Void
-    let copy: () -> Void
-    let copyImage: () -> Void
-    let open: () -> Void
-    let reselect: () -> Void
-    let retry: () -> Void
-    let close: () -> Void
-    let settings: () -> Void
-    var body: some View {
-        HStack(spacing: compact ? 6 : 10) {
-            if !compact {
-                Menu {
-                    ForEach(ScreenshotLanguage.allCases, id: \.self) { language in
-                        Button(L10n.text(language == .automatic ? "自动识别语言" : language.rawValue)) {
-                            model.sourceLanguage = language
-                            if language != .automatic { model.targetLanguage = language == .chinese ? .english : .chinese }
-                            languageChanged()
-                        }
-                    }
-                } label: { Text(L10n.text(model.document == nil && model.sourceLanguage == .automatic ? "自动识别" : model.detectedSource.rawValue)) }
-                .frame(width: 78).help(L10n.text("原文语言"))
-                icon("arrow.left.arrow.right", "交换语言", action: swap)
-            }
-            Menu {
-                ForEach(ScreenshotLanguage.allCases, id: \.self) { language in
-                    Button(L10n.text(language == .automatic ? "自动选择译文语言" : language.rawValue)) {
-                        model.targetLanguage = language; languageChanged()
-                    }
-                }
-            } label: { Text(L10n.text(model.document == nil && model.targetLanguage == .automatic ? "译文语言" : model.resolvedTarget.rawValue)) }
-            .frame(width: 84).help(L10n.text("译文语言"))
-            Divider().frame(height: 18)
-            Toggle(L10n.text("对照"), isOn: $model.original).toggleStyle(.switch).controlSize(.mini)
-                .help(L10n.text("切换原文与译文；按住 Option 临时查看原文"))
-            icon("text.cursor", "选择文字", active: model.selectingText) { model.selectingText.toggle() }
-            icon("photo.on.rectangle", "复制图片", action: copyImage).disabled(!model.original && (model.busy || model.overflow || !model.error.isEmpty))
-            if !compact { icon("pin", "固定截图", active: model.pinned) { model.pinned.toggle() } }
-            icon("viewfinder", "重新框选", action: reselect)
-            icon("arrow.up.right.square", "在窗口查看", action: open).disabled(model.document == nil)
-            if model.needsSettings { icon("gearshape", "打开模型设置", action: settings) }
-            else if !model.error.isEmpty { icon("arrow.clockwise", "重试", action: retry) }
-            Spacer(minLength: 0)
-            Button(action: copy) {
-                Label(L10n.text(model.copied ? "已复制" : "复制文字"), systemImage: model.copied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 11, weight: .semibold)).padding(.horizontal, 10).frame(height: 26)
-                    .background(Color(screenshotCoral), in: RoundedRectangle(cornerRadius: 5))
-            }.buttonStyle(.plain).disabled(model.copyText.isEmpty)
-            icon("xmark", "关闭截图翻译", action: close)
-        }
-        .font(.system(size: 11)).controlSize(.small).buttonStyle(.borderless)
-        .padding(.horizontal, 12).frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: NSColor(srgbRed: 0.16, green: 0.17, blue: 0.18, alpha: 0.98)), in: RoundedRectangle(cornerRadius: 7))
-        .environment(\.colorScheme, .dark)
+// AppKit controls inherit the Mac's appearance, contrast, focus and accent color.
+final class ScreenshotWorkspaceToolbar: NSVisualEffectView {
+    private let model: ScreenshotOverlayModel
+    private let languageChanged: () -> Void
+    private let actions: [() -> Void]
+    private let language = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let original = NSButton()
+    private let copyButton = NSButton()
+    private let more = NSButton()
+    init(model: ScreenshotOverlayModel, languageChanged: @escaping () -> Void,
+         copy: @escaping () -> Void, copyImage: @escaping () -> Void, open: @escaping () -> Void,
+         reselect: @escaping () -> Void, retry: @escaping () -> Void, close: @escaping () -> Void, settings: @escaping () -> Void) {
+        self.model = model; self.languageChanged = languageChanged
+        actions = [copy, copyImage, open, reselect, retry, close, settings]
+        super.init(frame: .zero)
+        material = .popover; blendingMode = .withinWindow; state = .active
+        wantsLayer = true; layer?.cornerRadius = 10; layer?.masksToBounds = true
+        layer?.borderWidth = 0.5; layer?.borderColor = NSColor.separatorColor.cgColor
+        language.controlSize = .small
+        language.addItems(withTitles: ScreenshotLanguage.allCases.map { L10n.text($0 == .automatic ? "自动选择译文语言" : $0.rawValue) })
+        language.target = self; language.action = #selector(changeLanguage)
+        language.toolTip = L10n.text("译文语言"); language.setAccessibilityLabel(L10n.text("译文语言"))
+        original.title = L10n.text("对照"); original.setButtonType(.pushOnPushOff); original.bezelStyle = .rounded
+        original.target = self; original.action = #selector(toggleOriginal)
+        original.toolTip = L10n.text("切换原文与译文；按住 Option 临时查看原文")
+        copyButton.title = L10n.text("复制文字"); copyButton.bezelStyle = .rounded
+        copyButton.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+        copyButton.imagePosition = .imageLeading; copyButton.target = self; copyButton.action = #selector(performAction(_:)); copyButton.tag = 0
+        more.isBordered = false; more.target = self; more.action = #selector(showMore)
+        more.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: L10n.text("更多"))
+        more.imagePosition = .imageOnly; more.toolTip = L10n.text("更多"); more.setAccessibilityLabel(L10n.text("更多"))
+        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.text("关闭截图翻译"))!, target: self, action: #selector(performAction(_:)))
+        close.isBordered = false; close.tag = 5; close.toolTip = L10n.text("关闭截图翻译")
+        let stack = NSStackView(views: [language, original, copyButton, more, close])
+        stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 5, left: 9, bottom: 5, right: 9)
+        stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
+        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            language.widthAnchor.constraint(equalToConstant: 110), more.widthAnchor.constraint(equalToConstant: 25), close.widthAnchor.constraint(equalToConstant: 24)])
+        for button in [original, copyButton, close] { button.controlSize = .small; button.font = .systemFont(ofSize: NSFont.smallSystemFontSize) }
+        update()
     }
-    private func icon(_ symbol: String, _ label: String, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 13)).frame(width: 24, height: 26)
-                .foregroundStyle(active ? Color(screenshotCoral) : .white.opacity(0.85))
-                .background(active ? Color.white.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 4))
-        }.buttonStyle(.plain).help(L10n.text(label)).accessibilityLabel(L10n.text(label))
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @objc private func changeLanguage() { model.targetLanguage = ScreenshotLanguage.allCases[language.indexOfSelectedItem]; languageChanged() }
+    @objc private func toggleOriginal() { model.original.toggle() }
+    @objc private func performAction(_ sender: NSControl) { actions[sender.tag]() }
+    @objc private func showMore() { more.menu?.popUp(positioning: nil, at: NSPoint(x: 0, y: -3), in: more) }
+    @objc private func menuAction(_ sender: NSMenuItem) {
+        if sender.tag == 7 { model.pinned.toggle() }
+        else if sender.tag == 8 { model.selectingText.toggle() }
+        else { actions[sender.tag]() }
+    }
+    func update() {
+        language.selectItem(at: ScreenshotLanguage.allCases.firstIndex(of: model.targetLanguage) ?? 0)
+        // Compact language names keep the toolbar stable as OCR finishes.
+        language.selectedItem?.title = L10n.text(model.targetLanguage == .automatic ? "自动" : model.targetLanguage.rawValue)
+        original.state = model.original ? .on : .off
+        copyButton.title = L10n.text(model.copied ? "已复制" : "复制文字"); copyButton.isEnabled = !model.copyText.isEmpty
+        let menu = NSMenu(); menu.autoenablesItems = false
+        func item(_ title: String, _ tag: Int, enabled: Bool = true, checked: Bool = false) {
+            let value = NSMenuItem(title: L10n.text(title), action: #selector(menuAction(_:)), keyEquivalent: "")
+            value.target = self; value.tag = tag; value.isEnabled = enabled; value.state = checked ? .on : .off; menu.addItem(value)
+        }
+        item("复制图片", 1, enabled: model.original || (!model.busy && !model.overflow && model.error.isEmpty))
+        item("固定截图", 7, checked: model.pinned); item("拖动模式", 8, checked: !model.selectingText)
+        menu.addItem(.separator()); item("重新框选", 3); item("在窗口查看", 2, enabled: model.document != nil)
+        if model.needsSettings { item("打开模型设置", 6) } else if !model.error.isEmpty { item("重试", 4) }
+        more.menu = menu; more.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: L10n.text("更多"))
     }
 }
 
@@ -151,8 +154,8 @@ private final class ScreenshotWorkspaceView: NSView {
         super.init(frame: .zero); wantsLayer = true
         layer?.contentsGravity = .resize; layer?.magnificationFilter = .nearest; layer?.minificationFilter = .nearest
         shade.fillRule = .evenOdd; shade.fillColor = NSColor.black.withAlphaComponent(0.53).cgColor
-        border.strokeColor = screenshotCoral.cgColor; border.fillColor = nil; border.lineWidth = 1
-        handles.strokeColor = screenshotCoral.cgColor; handles.fillColor = NSColor.white.cgColor; handles.lineWidth = 1
+        border.strokeColor = NSColor.controlAccentColor.cgColor; border.fillColor = nil; border.lineWidth = 1
+        handles.strokeColor = NSColor.controlAccentColor.cgColor; handles.fillColor = NSColor.white.cgColor; handles.lineWidth = 1
         layer?.addSublayer(shade); addSubview(canvas)
         loading.wantsLayer = true; loading.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         spinner.style = .spinning; spinner.controlSize = .small; spinner.isDisplayedWhenStopped = false
@@ -192,7 +195,9 @@ private final class ScreenshotWorkspaceView: NSView {
         guard bounds.contains(point) else { return nil }
         if let toolbar, toolbar.frame.contains(point) { return super.hitTest(point) }
         if ScreenshotHandle.allCases.contains(where: { let p = $0.point(in: selection); return abs(p.x-point.x) <= 7 && abs(p.y-point.y) <= 7 }) { return self }
-        if selectingText && selection.contains(point) { return super.hitTest(point) ?? self }
+        if selection.contains(point) && !selection.insetBy(dx: 5, dy: 5).contains(point) { return self }
+        if selectingText && selection.contains(point), let hit = super.hitTest(point), hit is NSTextView || hit is NSClipView || hit is NSScroller { return hit }
+        // Empty image space and the border drag the result; text selects immediately.
         return self
     }
     override func resetCursorRects() {
@@ -232,7 +237,7 @@ final class ScreenshotTranslationController {
     private let snapshot: FrozenCapture
     private let modelName: String
     private var panels: [(ScreenshotWorkspacePanel, ScreenshotWorkspaceView, CGRect)] = []
-    private var toolbar: NSView?
+    private var toolbar: ScreenshotWorkspaceToolbar?
     private var task: Task<Void, Never>?
     private var work: ScreenshotTranslationWork?
     private var cache: [String: String] = [:]
@@ -283,20 +288,19 @@ final class ScreenshotTranslationController {
         }
         start()
     }
-    private func makeToolbar(width: CGFloat) -> NSView {
-        NSHostingView(rootView: LocalizedRoot(content: ScreenshotWorkspaceToolbar(model: model, compact: width < 650,
-            languageChanged: { [weak self] in self?.languageChanged() }, swap: { [weak self] in self?.swapLanguages() },
+    private func makeToolbar() -> ScreenshotWorkspaceToolbar {
+        ScreenshotWorkspaceToolbar(model: model, languageChanged: { [weak self] in self?.languageChanged() },
             copy: { [weak self] in self?.copy() }, copyImage: { [weak self] in self?.copyImage() }, open: { [weak self] in self?.openWindow() },
             reselect: { [weak self] in self?.reselect() }, retry: { [weak self] in self?.start() }, close: { [weak self] in self?.close() },
-            settings: { [weak self] in let callback = self?.onSettings; self?.close(); callback?() })))
+            settings: { [weak self] in let callback = self?.onSettings; self?.close(); callback?() })
     }
     private func refresh() {
         guard !closed, !panels.isEmpty else { return }
         let host = panels.firstIndex(where: { $0.2.contains(CGPoint(x: selection.midX, y: selection.midY)) }) ?? 0
         let screen = NSScreen.screens.first(where: { $0.frame == panels[host].2 })?.visibleFrame ?? panels[host].2
-        let width = min(760, screen.width - 16)
-        let barFrame = ScreenshotLayout.toolbarFrame(selection: selection, screen: screen, size: CGSize(width: width, height: 44))
-        if toolbar == nil { toolbar = makeToolbar(width: width) }
+        let width = min(360, screen.width - 16)
+        let barFrame = ScreenshotLayout.toolbarFrame(selection: selection, screen: screen, size: CGSize(width: width, height: 38))
+        if toolbar == nil { toolbar = makeToolbar() }; toolbar?.update()
         var overflow = false
         for (index, entry) in panels.enumerated() {
             let (panel, view, frame) = entry

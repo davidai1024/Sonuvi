@@ -72,9 +72,13 @@ func makeScreenshotWorkspaceScene(diagram: Bool) -> CGImage {
         text("打开", 83, 491, 14)
         for (index, title) in ["最近", "星标", "共享", "云文档", "我的设备", "标签", "回收站", "本地", "桌面", "文稿", "下载", "工作台"].enumerated() {
             let y = CGFloat(437-index*34)
-            box(CGRect(x: 28, y: y+3, width: 12, height: 12), NSColor(white: 0.7, alpha: 1), radius: 2)
+            let symbols = ["clock", "star", "person.2", "cloud", "desktopcomputer", "tag", "trash", "internaldrive", "folder", "doc", "arrow.down.circle", "square.grid.2x2"]
+            if let symbol = NSImage(systemSymbolName: symbols[index], accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 14, weight: .regular)) {
+                symbol.draw(in: CGRect(x: 27, y: y+1, width: 17, height: 17))
+            }
             text(title, 52, y, 12)
         }
+        box(CGRect(x: 193, y: 0, width: 1, height: 590), NSColor(white: 0.8, alpha: 1))
         text("快速访问", 224, 542, 22, bold: true)
         text("最近", 224, 494, 21, bold: true)
         text("全部类型", 224, 451, 12, bold: true)
