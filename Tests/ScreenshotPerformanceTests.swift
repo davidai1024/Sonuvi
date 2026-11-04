@@ -160,6 +160,10 @@ func runScreenshotSpeedAndDarkChecks() async -> Int {
     let metadata = ScreenshotDocument(lines:[ScreenshotTextLine(text:"Today",bounds:CGRect(x:0.5,y:0.4,width:0.06,height:0.03),confidence:1),ScreenshotTextLine(text:"2:09",bounds:CGRect(x:0.58,y:0.4,width:0.04,height:0.03),confidence:1)],imageSize:CGSize(width:1000,height:1000))
     check(metadata.text.contains("2:09"),"Real numeric metadata beside a UI label remains copyable")
     check(!ScreenshotTextFilter.detachedAdornment("2:09",body:"Today",icon:CGRect(x:0.5,y:0.4,width:0.04,height:0.03),label:CGRect(x:0.56,y:0.4,width:0.06,height:0.03),imageSize:CGSize(width:1000,height:1000)),"A timestamp is not classified as a decorative prefix")
+    check(ScreenshotTextFilter.isDayTimeBoundary(day:"昨天",remainder:"14:30"),"Chinese relative dates and their clock stay in one translation region")
+    check(ScreenshotTextFilter.isDayTimeBoundary(day:"Today",remainder:"2:09 PM"),"English relative dates retain their clock and day period")
+    check(!ScreenshotTextFilter.isDayTimeBoundary(day:"我",remainder:"14:30"),"Creator and time cells remain separate")
+    check(!ScreenshotTextFilter.isDayTimeBoundary(day:"昨天",remainder:"16 KB"),"Relative day labels do not swallow a file-size cell")
     let size = CGSize(width:1900,height:970),fixture = makeScreenshotDarkFixture(),image = fixture.image
     if let png = NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:]) { try! png.write(to:URL(fileURLWithPath:"/tmp/sonuvi-dark-layout-source.png")) }
     let observed = try! await OCRService.recognizeDocument(.image(image),cpuOnly:true)

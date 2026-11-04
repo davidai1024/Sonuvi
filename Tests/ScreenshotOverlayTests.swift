@@ -154,6 +154,8 @@ func runScreenshotOverlayTests() async {
     check(["2.7 MB", "2026-09-23", "16 KB", "11:18", "P(IoU)"].allSatisfy { !ScreenshotTranslationRules.needsTranslation($0) }, "Numbers, metadata and math remain untouched pixels")
     check(["Quick Access", "回收站", "研究报告.pdf"].allSatisfy(ScreenshotTranslationRules.needsTranslation), "UI labels and document titles remain translatable")
     let list = try! await OCRService.recognizeDocument(.image(makeScreenshotWorkspaceScene(diagram: false)), cpuOnly: true)
+    let dated = list.regions.filter { $0.text.contains("昨天") }
+    check(!dated.isEmpty && dated.allSatisfy { $0.text.contains("14:30") },"OCR retains a relative day and clock in one date cell")
     check(list.regions.count > 30, "Dense file-list OCR retains independent label and metadata slots")
     let languageModel = ScreenshotOverlayModel(); languageModel.document = list
     check(languageModel.detectedSource == .chinese && languageModel.resolvedTarget == .english,

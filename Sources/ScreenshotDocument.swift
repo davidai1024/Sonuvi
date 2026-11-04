@@ -96,6 +96,10 @@ enum ScreenshotTextFilter {
     }
     private static let englishLabels: Set<String> = ["recent","all types","all locations","creator","last modified","new","open","starred","shared","cloud document","cloud documents","personal space","team space","my devices","label","labels","recycle bin","local","desktop","documents","downloads","wechat files","browse","frequently used","sync folder","workbench","wiki","calendar","messages","email","templates","update","me","guest","today","yesterday","最近","所有类型","全部类型","所有位置","文件位置","创建者","最后修改","最近修改","新建","打开","星标","已加星标","共享","已共享","云文档","个人空间","团队空间","我的设备","标签","回收站","本地","桌面","文档","文稿","下载","浏览","工作台","今天","昨天","我"]
     private static let compactLabels = Set(englishLabels.map { $0.replacingOccurrences(of:" ",with:"") })
+    static func isDayTimeBoundary(day:String,remainder:String) -> Bool {
+        let labels: Set<String> = ["今天","昨天","今日","昨日","today","yesterday"]
+        return labels.contains(day.lowercased()) && remainder.range(of:#"^\d{1,2}[:：]\d{2}(?:\b|\s|$)"#,options:.regularExpression) != nil
+    }
     static func isUILabel(_ body:String) -> Bool {
         guard body.count <= 80 else { return false }
         let lower = body.lowercased().trimmingCharacters(in:.whitespacesAndNewlines)

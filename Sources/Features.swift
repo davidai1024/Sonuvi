@@ -312,7 +312,11 @@ enum OCRService {
                     let prefix = String(string[..<words[index].0.lowerBound]).trimmingCharacters(in:.whitespacesAndNewlines)
                     let suffix = String(string[words[index].0.lowerBound...]).trimmingCharacters(in:.whitespacesAndNewlines)
                     let cellBoundary = ScreenshotTextFilter.isUILabel(prefix) && ScreenshotTextFilter.isUILabel(suffix)
-                    if cellBoundary || uiLanguageBoundary || (words[index].1.minX - words[index-1].1.maxX) * imageSize.width > max(textBounds.height * imageSize.height * 0.85, 4) {
+                    let remainder = String(string[words[index].0.lowerBound...])
+                    let dayAndTime = ScreenshotTextFilter.isDayTimeBoundary(day:previous,remainder:remainder)
+                    // A script change inside a date is not a column boundary.
+                    // Real pixel gaps still split unrelated table cells.
+                    if cellBoundary || (!dayAndTime && uiLanguageBoundary) || (words[index].1.minX - words[index-1].1.maxX) * imageSize.width > max(textBounds.height * imageSize.height * 0.85, 4) {
                         cuts.append(words[index].0.lowerBound)
                     }
                 }
