@@ -27,7 +27,7 @@ enum ScreenshotVisionEngine {
         // can still compile an ANE model even with an explicit CPU device.
         // Explicit CPU fixtures use the same revision across macOS runners.
         if cpuOnly || needsCPUWorkaround { request.revision = VNRecognizeTextRequestRevision2 }
-        request.recognitionLevel = .accurate;request.recognitionLanguages = ["zh-Hans","zh-Hant","en-US"];request.usesLanguageCorrection = true
+        request.recognitionLevel = .accurate;request.recognitionLanguages = ["en-US","zh-Hans","zh-Hant"];request.usesLanguageCorrection = true
         if cpuOnly || needsCPUWorkaround {
             // usesCPUOnly is deprecated and can be ignored on newer systems.
             // Select the supported CPU device before Vision creates its detector.
