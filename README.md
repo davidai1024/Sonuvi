@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.47-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.48-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载翻译版 · 17.2 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.47/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463.4 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.47/Sonuvi-Mac-Offline.dmg)**
+**[下载翻译版 · 17.3 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.48/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463.6 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.48/Sonuvi-Mac-Offline.dmg)**
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.47
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.48
 
 两个版本功能相同。轻量版未内置朗读模型，可随时在「设置 → 模型」免费下载约 505 MB 的本地语音资源；完整朗读版已内置模型、运行环境和 28 个英文音色，无需另行下载。模型准备好后，英文朗读免费且可离线使用。已有模型会保留，可单独更新。
 
-[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.47)
+[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.48)
 <!-- sonuvi-download:end -->
 
 [官方网站](https://sonuvi.davidai1024.com/) · [使用教程](https://sonuvi.davidai1024.com/learn/) · [28 种音色试听](https://sonuvi.davidai1024.com/learn/voices/) · [English guides](https://sonuvi.davidai1024.com/en/learn/)
@@ -92,7 +92,7 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.47
 | **两种播放位置** | 跨应用操作显示浮条；翻译窗口内发起朗读，直接在窗口底部显示点阵与停止按钮。 |
 | **中英自动互译** | 中文译英文、英文译中文，无需来回切换方向。 |
 | **词典与句子模式** | 单词、短语展示释义、词性、音标和例句；句子展示流式译文。 |
-| **截图翻译** | 原生框选区域，本机 OCR 识别，再翻译识别出的文字；先展示识别状态。 |
+| **截图翻译** | 保留 Retina 原始像素，本机 OCR 识别文字和位置；默认原位覆盖、自适应排版，支持选择文字、复制译文图片、切换原文及在窗口查看。 |
 | **系统服务** | 在支持文本服务的应用中，通过右键 → 服务调用翻译和朗读。 |
 | **长文本阅读** | 原文按内容增高，到上限后滚动；向下阅读时保留返回原文入口，滚动条使用细滑块。 |
 | **复制与编辑** | 原文、译文和例句可复制；支持常用键盘编辑操作。 |
