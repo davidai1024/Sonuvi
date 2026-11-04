@@ -130,7 +130,10 @@ final class TranslationWork {
              onUpdate: @escaping @MainActor (String) -> Void,
              onProgress: @escaping @MainActor (Int, Int, Bool) -> Void) async throws -> String {
         var holdPreview = false
-        func publish(_ value: String) { if !holdPreview { onUpdate(value) } }
+        func publish(_ value: String, receivedText: Bool = false) {
+            if receivedText && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { holdPreview = false }
+            if !holdPreview { onUpdate(value) }
+        }
         if let wholeOutput { return wholeOutput }
         if !hasStyles && source.count > 5000 && longChunks == nil && longIndex == 0 {
             if let chunks = Self.documentChunks(source), chunks.count > 1 { longChunks = chunks }
@@ -205,7 +208,18 @@ final class TranslationWork {
                     publish(self.output); onProgress(index + 1, self.parts.count, true)
                 }, operation: {
                     try await send(request) { value in
-                        if fields.count == 1 { publish(before + fields[0].0 + value) }
+                        if fields.count == 1 { publish(before + fields[0].0 + value, receivedText: !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                        else if let values = Self.partialBatch(value, markers: markers) {
+                            var preview = before
+                            for (i, piece) in values.enumerated() {
+                                let line = piece.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).joined(separator: " ")
+                                preview += fields[i].0 + (self.hasStyles ? line : MarkdownTranslation.escapeTranslation(line))
+                                if i + 1 < values.count { preview += batch[i].separator }
+                            }
+                            if values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                                publish(preview, receivedText: true)
+                            }
+                        }
                     }
                 })
                 try Task.checkCancellation()
@@ -241,6 +255,30 @@ final class TranslationWork {
         }
         if holdPreview { onUpdate(output) }
         return output
+    }
+
+    /// Display only fields whose marker has arrived, withholding an incomplete
+    /// next marker. Final alignment is still validated by parseBatch before commit.
+    static func partialBatch(_ text: String, markers: [String]) -> [String]? {
+        guard let first = markers.first, let start = text.range(of: first),
+              text[..<start.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var cursor = start.upperBound
+        var values: [String] = []
+        for marker in markers.dropFirst() {
+            if let next = text.range(of: marker, range: cursor..<text.endIndex) {
+                values.append(String(text[cursor..<next.lowerBound])); cursor = next.upperBound
+            } else {
+                var tail = String(text[cursor...])
+                for length in stride(from: min(marker.count - 1, tail.count), through: 1, by: -1) {
+                    if tail.hasSuffix(String(marker.prefix(length))) { tail.removeLast(length); break }
+                }
+                if tail.contains("⟦SONUVI_") { return nil }
+                values.append(tail); return values
+            }
+        }
+        let tail = String(text[cursor...])
+        guard !tail.contains("⟦SONUVI_") else { return nil }
+        values.append(tail); return values
     }
 
     static func parseBatch(_ text: String, markers: [String]) -> [String]? {

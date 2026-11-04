@@ -67,17 +67,26 @@ func runNetworkTests() async {
 
 /// Explicit CLI diagnostic: sends only this fixed synthetic sentence, never user text.
 @MainActor
-func runTranslationConnectionTest() async -> Int32 {
+func runTranslationConnectionTest(profile: Bool = false) async -> Int32 {
     do {
         let key = try KeyStore.read()
         let name = UserDefaults.standard.string(forKey: "modelName")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let request = try DeepSeekClient.request(text: "The sun is bright today.", kind: .sentence,
+        let source = profile ? String(repeating: "Streaming translation should display each sentence as it arrives. A clear interface keeps paragraphs and formatting intact, while avoiding repeated work on text that has already been displayed. The application should remain responsive when the translated document becomes longer.\n\n", count: 4) : "The sun is bright today."
+        let start = ProcessInfo.processInfo.systemUptime
+        var first: TimeInterval?; var last = start; var longestGap: TimeInterval = 0; var updates = 0; var previous = ""
+        let request = try DeepSeekClient.request(text: source, kind: .sentence,
                                                direction: .toChinese, model: name.isEmpty ? "deepseek-flash" : name, key: key)
         let output = try await TranslationRetry.run(onRetry: { print("RETRY: temporary service or connection failure") }, operation: {
-            try await DeepSeekClient.stream(request) { _ in }
+            try await DeepSeekClient.stream(request) { value in
+                guard value != previous else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                if first == nil { first = now } else { longestGap = max(longestGap, now - last) }
+                last = now; previous = value; updates += 1
+            }
         })
         guard !output.isEmpty else { return 1 }
         print("PASS: live synthetic translation completed")
+        if profile { print(String(format: "STREAM: first_text=%.3fs total=%.3fs longest_gap=%.3fs updates=%d characters=%d", (first ?? last) - start, ProcessInfo.processInfo.systemUptime - start, longestGap, updates, output.count)) }
         return 0
     } catch let error as TranslateError {
         print("FAIL: " + error.localizedDescription)
