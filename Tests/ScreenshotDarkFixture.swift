@@ -13,8 +13,12 @@ func makeScreenshotDarkWorkspaceScene() -> CGImage {
     }
     func icon(_ s: String,_ x: CGFloat,_ y: CGFloat,_ pt: CGFloat = 16,_ color: NSColor = .lightGray) {
         guard let img = NSImage(systemSymbolName:s,accessibilityDescription:nil)?.withSymbolConfiguration(.init(pointSize:pt,weight:.regular))?.withSymbolConfiguration(.init(paletteColors:[color])) else { return }
-        let tinted = NSImage(size:NSSize(width:pt+2,height:pt+2));tinted.lockFocus();color.set();img.draw(in:CGRect(x:0,y:0,width:pt+2,height:pt+2));tinted.unlockFocus()
-        tinted.draw(in:CGRect(x:x,y:y,width:pt+2,height:pt+2))
+        // Draw into the explicit bitmap context; lockFocus creates a display-
+        // dependent context and can corrupt later text drawing on headless Macs.
+        ctx.saveGState();NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext:ctx,flipped:false)
+        img.draw(in:CGRect(x:x,y:y,width:pt+2,height:pt+2))
+        NSGraphicsContext.restoreGraphicsState();ctx.restoreGState()
     }
     fill(CGRect(origin:.zero,size:size),0.14);fill(CGRect(x:65,y:0,width:260,height:875),0.09)
     let rail = [("Documents","doc.fill"),("Messages","message.fill"),("Email","envelope.fill"),("Calendar","calendar"),("Templates","square.grid.2x2.fill")]

@@ -38,3 +38,10 @@ jobs:
           build/Sonuvi --markdown-test
           build/Sonuvi --long-translation-test
           build/Sonuvi --translation-layout-test
+      - name: Preserve anonymous dark-layout fixture evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anonymous-dark-layout
+          path: /tmp/sonuvi-dark-layout-*.png
+          if-no-files-found: ignore

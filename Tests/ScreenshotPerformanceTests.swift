@@ -161,6 +161,7 @@ func runScreenshotSpeedAndDarkChecks() async -> Int {
     check(metadata.text.contains("2:09"),"Real numeric metadata beside a UI label remains copyable")
     check(!ScreenshotTextFilter.detachedAdornment("2:09",body:"Today",icon:CGRect(x:0.5,y:0.4,width:0.04,height:0.03),label:CGRect(x:0.56,y:0.4,width:0.06,height:0.03),imageSize:CGSize(width:1000,height:1000)),"A timestamp is not classified as a decorative prefix")
     let size = CGSize(width:1900,height:970),image = makeScreenshotDarkWorkspaceScene()
+    if let png = NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:]) { try! png.write(to:URL(fileURLWithPath:"/tmp/sonuvi-dark-layout-source.png")) }
     let reference = try! await OCRService.recognizeDocument(.image(image),cpuOnly:true,maximumDimension:nil)
     let dark = try! await OCRService.recognizeDocument(.image(image),cpuOnly:true)
     let required = ["Recent","All Types","Shared","My Devices","Creator","Last Modified","Open"]
