@@ -14,12 +14,14 @@ final class ScreenshotVisualGeometry {
     }
     private let width:Int,height:Int
     private let pixels:[UInt8]
+    private let nativeEdges:ScreenshotNativeEdgeProbe?
     private var components:[Component] = []
     private(set) var containers:[ScreenshotVisualContainer] = []
     private var squareColors:[CGRect] = []
     init(image:CGImage) {
         let scale = min(1,1280 / CGFloat(max(image.width,image.height)))
         width = max(1,Int(CGFloat(image.width)*scale));height = max(1,Int(CGFloat(image.height)*scale))
+        nativeEdges = image.width > width || image.height > height ? ScreenshotNativeEdgeProbe(image:image,analysisSize:CGSize(width:width,height:height)) : nil
         let w = width,h = height
         var data = [UInt8](repeating:0,count:w*h*4)
         data.withUnsafeMutableBytes { b in
@@ -253,13 +255,13 @@ final class ScreenshotVisualGeometry {
     }
     // Pixel coordinates here are bottom-left, matching the OCR/layout system.
     private func uprightColor(_ x:Int,_ y:Int) -> (Int,Int,Int) {color(x,height-1-y)}
-    private func verticalInkEdge(_ x:Int,_ lo:Int,_ hi:Int) -> Bool {
-        var strong = 0,soft = 0,total = 0
+    private func verticalInkEdge(_ x:Int,_ lo:Int,_ hi:Int) -> (strong:Bool,soft:Bool,weak:Bool) {
+        var strong = 0,soft = 0,weak = 0,total = 0
         for y in lo...hi {
             let change = max(distance(uprightColor(x-1,y),uprightColor(x+1,y)),distance(uprightColor(x-2,y),uprightColor(x,y)))
-            total += 1;if change >= 18 {strong += 1};if change >= 5 {soft += 1}
+            total += 1;if change >= 18 {strong += 1};if change >= 5 {soft += 1};if change >= 2 {weak += 1}
         }
-        return strong >= max(2,Int(ceil(CGFloat(total)*0.25))) || soft >= max(3,Int(ceil(CGFloat(total)*0.8)))
+        return (strong >= max(2,Int(ceil(CGFloat(total)*0.25))),soft >= max(3,Int(ceil(CGFloat(total)*0.8))),weak >= max(3,Int(ceil(CGFloat(total)*0.8))))
     }
     private func rasterRightEdge(source:CGRect,limit:CGFloat) -> CGFloat {
         let lo = max(1,Int(source.minY)),hi = min(height-2,Int(source.maxY))
@@ -267,14 +269,22 @@ final class ScreenshotVisualGeometry {
         guard end >= start,hi >= lo else {return limit}
         // Partial high-contrast strokes stop at graphics/text; full-height
         // low-contrast transitions stop at borders on dark surfaces.
-        for x in start...end where verticalInkEdge(x,lo,hi) {return max(source.maxX,CGFloat(x)-3)}
+        for x in start...end {
+            let evidence = verticalInkEdge(x,lo,hi)
+            if evidence.strong || (nativeEdges == nil && evidence.soft) {return max(source.maxX,CGFloat(x)-3)}
+            if evidence.weak,let edge = nativeEdges?.edge(near:x,source:source,limit:limit,trailing:true) {return min(limit,edge)}
+        }
         return limit
     }
     private func rasterLeftEdge(source:CGRect,limit:CGFloat) -> CGFloat? {
         let lo = max(1,Int(source.minY)),hi = min(height-2,Int(source.maxY))
         let start = min(width-3,Int(floor(source.minX))-3),end = max(2,Int(ceil(limit)))
         guard start >= end,hi >= lo else {return nil}
-        for x in stride(from:start,through:end,by:-1) where verticalInkEdge(x,lo,hi) {return min(source.minX,CGFloat(x)+3)}
+        for x in stride(from:start,through:end,by:-1) {
+            let evidence = verticalInkEdge(x,lo,hi)
+            if evidence.strong || (nativeEdges == nil && evidence.soft) {return min(source.minX,CGFloat(x)+3)}
+            if evidence.weak,let edge = nativeEdges?.edge(near:x,source:source,limit:limit,trailing:false) {return max(limit,edge)}
+        }
         return nil
     }
     private func rasterBottomEdge(source:CGRect,left:CGFloat,right:CGFloat,limit:CGFloat) -> CGFloat {
