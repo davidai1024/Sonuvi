@@ -114,7 +114,9 @@ func runScreenshotOverlayTests() async {
     let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
     controller.copy(to: board)
     check(board.string(forType: .string) == "你好\n\n下面", "Copy translation uses completed regions in reading order")
+    controller.model.completed = [0: "你好，世界", 1: "下面的文字"]
     controller.copyImage(to: board)
+    controller.model.completed = work.completed
     let copiedImage = NSBitmapImageRep(data: board.data(forType: .png)!)!
     check(copiedImage.pixelsWide == 1000 && copiedImage.pixelsHigh == 600, "Copied translated PNG keeps the original Retina pixel dimensions")
     let copiedText = try! await OCRService.recognizeDocument(.image(copiedImage.cgImage!), cpuOnly: true).text
@@ -187,6 +189,16 @@ func runScreenshotOverlayTests() async {
     check(board.string(forType: .string) == "fixture sentinel", "An overflowing image does not overwrite the clipboard with a clipped result")
     if list.text.contains("①") || list.text.contains("④") || list.text.contains("88") { FileHandle.standardError.write(Data(("Sidebar OCR fixture: " + list.regions.filter { $0.bounds.minX < 0.18 }.map { "\($0.text) \($0.bounds)" }.joined(separator: "; ") + "\n").utf8)) }
     check(!list.text.contains("①") && !list.text.contains("④") && list.regions.filter { $0.text.contains("共享") }.allSatisfy { $0.text == "共享" }, "Real SF Symbols are excluded when Vision merges their glyphs into sidebar labels")
+    let nativeLabels = ["全部类型":"All Types","星标":"Starred","大小":"Size","最近修改":"Modified","我":"Me","回收站":"Recycle Bin"]
+    let nativeValues = Dictionary(uniqueKeysWithValues: list.regions.compactMap { region in nativeLabels[region.text].map { (region.id,$0) } })
+    let nativeCanvas = ScreenshotCanvasView(image: makeScreenshotWorkspaceScene(diagram: false),size: CGSize(width:1040,height:650))
+    _ = nativeCanvas.update(document: list,values: nativeValues,original:false)
+    for scroll in nativeCanvas.subviews.compactMap({ $0 as? NSScrollView }) {
+        guard let editor = scroll.documentView as? NSTextView,let container = editor.textContainer,let manager = editor.layoutManager else { fatalError("Missing native text layout") }
+        manager.ensureLayout(for: container)
+        let used = manager.usedRect(for: container)
+        check(used.maxY+4 <= scroll.contentSize.height+0.5 && used.width+4 <= scroll.contentSize.width+0.5,"Native short label is fully visible, including its last glyph: " + editor.string)
+    }
     let prefixBox = CGRect(x: 0.02,y: 0.7,width: 0.035,height: 0.06), labelBox = CGRect(x: 0.07,y: 0.7,width: 0.2,height: 0.04)
     check(ScreenshotTextFilter.iconPrefix("88",bounds: prefixBox,label: labelBox,imageSize: canvasSize,coloredTile: false), "A taller shared-people icon misread as repeated digits is protected")
     check(!ScreenshotTextFilter.iconPrefix("88",bounds: CGRect(x: 0.02,y: 0.7,width: 0.035,height: 0.04),label: labelBox,imageSize: canvasSize,coloredTile: false), "Ordinary numeric text at the label baseline is retained")

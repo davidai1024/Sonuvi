@@ -180,7 +180,8 @@ final class ScreenshotCanvasView: NSView {
                 text = NSTextView(); text.isEditable = false; text.isSelectable = true; text.isRichText = false
                 text.drawsBackground = false; text.textContainerInset = NSSize(width: 2, height: 2)
                 text.textContainer?.lineFragmentPadding = 0; text.textContainer?.widthTracksTextView = true
-                text.isVerticallyResizable = true; text.isHorizontallyResizable = false; text.autoresizingMask = [.width]
+                text.isVerticallyResizable = false; text.isHorizontallyResizable = false
+                text.minSize = .zero; text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,height: CGFloat.greatestFiniteMagnitude)
                 text.setAccessibilityLabel(L10n.text("区域译文"))
                 scroll.documentView = text; textViews[region.id] = scroll; addSubview(scroll)
             }
@@ -189,10 +190,11 @@ final class ScreenshotCanvasView: NSView {
             colors[region.id] = color
             scroll.frame = placement.frame; scroll.backgroundColor = .clear
             scroll.hasVerticalScroller = placement.scrolls; scroll.isHidden = original
-            text.frame = CGRect(x: 0, y: 0, width: placement.frame.width, height: max(placement.frame.height, placement.contentHeight))
-            text.textContainer?.containerSize = NSSize(width: max(1, placement.frame.width - 4), height: CGFloat.greatestFiniteMagnitude)
             if let storage = text.textStorage { StreamingTextUpdate.apply(value, to: storage) }
             text.font = .systemFont(ofSize: placement.fontSize); text.textColor = color.foreground
+            text.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(placement.frame.height, placement.contentHeight))
+            text.textContainer?.containerSize = NSSize(width: max(1, scroll.contentSize.width - 4), height: CGFloat.greatestFiniteMagnitude)
+            text.layoutManager?.ensureLayout(for: text.textContainer!)
             text.toolTip = value; lastText[region.id] = value
         }
         return overflow
