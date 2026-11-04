@@ -364,6 +364,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { selectionLog.info("Selection event monitor installed") }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Reopening while a nonactivating capture panel owns the interaction
+        // must not reactivate Settings over it or steal its keyboard focus.
+        guard !model.ocrBusy && screenshotOverlay == nil else { return false }
         // Updater/Keychain activation is not a request to open Settings.
         guard !model.updates.isPresentingManualCheck, !credentialPresentation.isActive else { return false }
         guard startupPresentation.canPresent && !restartInProgress else { return false }
@@ -878,7 +881,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     guard self.ocrID == id else { return }
                     guard let image = frozen.crop(rect) else { throw TranslateError.message("截图区域过大或无效，请重新框选。") }
                     self.model.ocrBusy = false; self.model.ocrRecognizing = false
-                    let overlay = ScreenshotTranslationController(image: image, selection: rect, modelName: self.model.modelName)
+                    let overlay = ScreenshotTranslationController(image: image, selection: rect, modelName: self.model.modelName, snapshot: frozen)
                     self.screenshotOverlay = overlay
                     self.model.usage.touch()
                     overlay.onCompleted = { [weak self] document in self?.model.usage.translation(text: document.text, kind: .sentence, app: origin, cached: false) }
@@ -1142,7 +1145,10 @@ else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
 else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); runMarkdownDocumentTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-overlay-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotOverlayTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--screenshot-provider-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotProviderTest() }; app.run() } }
 else if CommandLine.arguments.contains("--retina-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; runRetinaCaptureTest(); app.run() } }
+else if Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceSourceFixture") as? Bool == true { MainActor.assumeIsolated { runScreenshotSourceFixture(); NSApplication.shared.run() } }
+else if (CommandLine.arguments.contains("--screenshot-workspace-fixture") || Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceFixture") as? Bool == true) { MainActor.assumeIsolated { runScreenshotWorkspaceFixture(); NSApplication.shared.run() } }
 else if (CommandLine.arguments.contains("--screenshot-overlay-fixture") || Bundle.main.object(forInfoDictionaryKey: "ScreenshotOverlayFixture") as? Bool == true) { MainActor.assumeIsolated { runScreenshotOverlayFixture(); NSApplication.shared.run() } }
 else if CommandLine.arguments.contains("--streaming-display-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runStreamingDisplayTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--live-streaming-profile") { Task { @MainActor in exit(await runTranslationConnectionTest(profile: true)) }; dispatchMain() }

@@ -222,7 +222,34 @@ enum OCRService {
                       !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 return ScreenshotTextLine(text: candidate.string, bounds: observation.boundingBox, confidence: candidate.confidence)
             }
-            return ScreenshotDocument(lines: lines)
+            // Vision can place several table cells in one observation. Recover
+            // large word gaps before paragraph grouping; columns are separate
+            // translation slots, not a sentence to reflow across the whole row.
+            let separated = (request.results ?? []).flatMap { observation -> [ScreenshotTextLine] in
+                guard let candidate = observation.topCandidates(1).first else { return [] }
+                let string = candidate.string
+                guard !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+                var words: [(Range<String.Index>, CGRect)] = []
+                string.enumerateSubstrings(in: string.startIndex..<string.endIndex, options: .byWords) { _, range, _, _ in
+                    if let box = try? candidate.boundingBox(for: range) { words.append((range, box.boundingBox)) }
+                }
+                guard words.count > 1 else { return [ScreenshotTextLine(text: string, bounds: observation.boundingBox, confidence: candidate.confidence)] }
+                var cuts: [String.Index] = [string.startIndex]
+                for index in 1..<words.count {
+                    if words[index].1.minX - words[index-1].1.maxX > max(observation.boundingBox.height * 1.45, 0.009) {
+                        cuts.append(words[index].0.lowerBound)
+                    }
+                }
+                guard cuts.count > 1 else { return [ScreenshotTextLine(text: string, bounds: observation.boundingBox, confidence: candidate.confidence)] }
+                cuts.append(string.endIndex)
+                return (0..<cuts.count-1).compactMap { index in
+                    let range = cuts[index]..<cuts[index+1]
+                    let text = String(string[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty, let box = try? candidate.boundingBox(for: range) else { return nil }
+                    return ScreenshotTextLine(text: text, bounds: box.boundingBox, confidence: candidate.confidence)
+                }
+            }
+            return ScreenshotDocument(lines: separated.isEmpty ? lines : separated)
         }
         return try await withTaskCancellationHandler(operation: { try await work.value },
                                                       onCancel: { request.cancel(); work.cancel() })

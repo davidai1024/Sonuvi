@@ -6,7 +6,16 @@ final class ScreenshotTranslationWork {
     let document: ScreenshotDocument
     private(set) var completed: [Int: String] = [:]
     private var fragments: [Int: [String]] = [:]
-    init(document: ScreenshotDocument) { self.document = document }
+    let forcedDirection: Direction?
+    init(document: ScreenshotDocument, direction: Direction? = nil, cache: [String: String] = [:]) {
+        self.document = document; self.forcedDirection = direction
+        for region in document.regions {
+            if !ScreenshotTranslationRules.needsTranslation(region.text) || (direction != nil && region.direction != direction) {
+                completed[region.id] = region.text
+            } else if let value = cache[Self.cacheKey(region.text, direction: direction ?? region.direction)] { completed[region.id] = value }
+        }
+    }
+    static func cacheKey(_ text: String, direction: Direction) -> String { direction.rawValue + "\n" + text }
     typealias Send = (String, Direction, @escaping @MainActor (String) -> Void) async throws -> String
     func run(send: Send, onUpdate: @escaping @MainActor ([Int: String]) -> Void,
              onProgress: @escaping @MainActor (Int, Int, Bool) -> Void) async throws {
@@ -26,7 +35,7 @@ final class ScreenshotTranslationWork {
                 let value = try await TranslationRetry.run(onRetry: {
                     onProgress(self.completed.count, self.document.regions.count, true)
                 }, operation: {
-                    try await send(part.text, region.direction) { partial in
+                    try await send(part.text, self.forcedDirection ?? region.direction) { partial in
                         var visible = self.completed; visible[region.id] = prefix + partial
                         onUpdate(visible)
                     }
@@ -39,7 +48,7 @@ final class ScreenshotTranslationWork {
         }
         do {
             for direction in [Direction.toChinese, .toEnglish] {
-                var pending = document.regions.filter { $0.direction == direction && completed[$0.id] == nil }
+                var pending = document.regions.filter { (forcedDirection ?? $0.direction) == direction && completed[$0.id] == nil }
                 while !pending.isEmpty {
                     try Task.checkCancellation()
                     var batch: [ScreenshotTextRegion] = []; var size = 0
@@ -84,7 +93,23 @@ final class ScreenshotTranslationWork {
             onUpdate(completed) // Incomplete previews never become completed/copyable text.
             throw error
         }
+        onUpdate(completed); onProgress(completed.count, document.regions.count, false)
     }
+}
+
+enum ScreenshotTranslationRules {
+    static func needsTranslation(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.range(of: #"^(?:[A-Za-z]|[A-Z]{2,6})$"#, options: .regularExpression) != nil { return false }
+        if value.range(of: #"^[\d\s.,:/%+\-−×()…•]+(?:\s*(?:B|KB|MB|GB|TB|ms|px|kg|Hz|fps|°C))?$"#, options: [.regularExpression, .caseInsensitive]) != nil { return false }
+        if value.range(of: #"^[A-Za-z]?(?:[_₀-₉\d]|\([^\p{Han}]*\)|[=+−×/√∑∂]).*$"#, options: .regularExpression) != nil && value.count < 28 && !value.contains(" ") { return false }
+        return value.rangeOfCharacter(from: .letters) != nil
+    }
+}
+
+enum ScreenshotLanguage: String, CaseIterable {
+    case automatic = "自动", chinese = "中文", english = "English"
+    var direction: Direction? { self == .automatic ? nil : self == .chinese ? .toChinese : .toEnglish }
 }
 
 enum ScreenshotPresentation: String, CaseIterable {
