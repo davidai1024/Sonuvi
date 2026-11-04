@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var didReceiveService = false
     var ocrTask: Task<Void, Never>?
     var ocrID = UUID()
+    var screenshotOverlay: ScreenshotTranslationController?
     let preview = CommandLine.arguments.contains("--preview") || (Bundle.main.object(forInfoDictionaryKey: "MusePreview") as? Bool == true)
     let shortcutTest = Bundle.main.object(forInfoDictionaryKey: "MuseShortcutTest") as? Bool == true
 
@@ -537,6 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         browserServer.stop()
         permissionTimer?.invalidate(); usageTimer?.invalidate(); model.usage.persist()
+        screenshotOverlay?.close()
         model.cancel(); model.stopSpeaking(); model.runtime.cancel(); model.runtime.stopBackgroundWarmup(); captureTask?.cancel(); ocrTask?.cancel(); mouseTask?.cancel()
         for monitor in [localMonitor, mouseMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
         if let observer = workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
@@ -846,6 +848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showWindow(); return
         }
         let origin = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        screenshotOverlay?.close()
         captureTask?.cancel(); model.cancel(); dismissSelectionBubble()
         window.orderOut(nil); settings?.orderOut(nil)
         model.ocrBusy = true
@@ -866,7 +869,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
             do {
-                let text = try await OCRService.capture(snapshot: snapshot.get()) {
+                let frozen = try snapshot.get()
+                if self.model.screenshotPresentation == .overlay {
+                    let picker = ScreenSelection()
+                    guard let selected = try await picker.select(snapshot: frozen) else { return }
+                    let rect = frozen.alignedRect(selected)
+                    try Task.checkCancellation()
+                    guard self.ocrID == id else { return }
+                    guard let image = frozen.crop(rect) else { throw TranslateError.message("截图区域过大或无效，请重新框选。") }
+                    self.model.ocrBusy = false; self.model.ocrRecognizing = false
+                    let overlay = ScreenshotTranslationController(image: image, selection: rect, modelName: self.model.modelName)
+                    self.screenshotOverlay = overlay
+                    self.model.usage.touch()
+                    overlay.onCompleted = { [weak self] document in self?.model.usage.translation(text: document.text, kind: .sentence, app: origin, cached: false) }
+                    overlay.onCopy = { [weak self] in self?.model.usage.copied() }
+                    overlay.onClose = { [weak self, weak overlay] in
+                        guard let self, self.screenshotOverlay === overlay else { return }
+                        self.screenshotOverlay = nil
+                    }
+                    overlay.onSettings = { [weak self] in self?.model.settingsTab = "模型"; self?.showSettings() }
+                    overlay.onOpenWindow = { [weak self] document, translated, complete in
+                        guard let self else { return }
+                        self.model.setSource(document.text, app: origin)
+                        self.model.result = translated; self.model.word = nil
+                        self.model.statusText = complete ? "" : "部分区域尚未翻译，可在窗口重新翻译。"
+                        self.presentWindow(near: CGPoint(x: rect.maxX, y: rect.maxY))
+                    }
+                    overlay.show()
+                    return
+                }
+                let text = try await OCRService.capture(snapshot: frozen) {
                     guard self.ocrID == id else { return }
                     // Reset the old result without invoking model.cancel(), which
                     // would cancel this capture through the source didSet.
@@ -889,6 +921,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     func cancelOCR() {
+        screenshotOverlay?.close()
         ocrID = UUID(); ocrTask?.cancel(); ocrTask = nil
         model.ocrBusy = false; model.ocrRecognizing = false
         dismissSelectionBubble()
@@ -1108,6 +1141,9 @@ else if CommandLine.arguments.contains("--ocr-pipeline-test") { Task { await run
 else if CommandLine.arguments.contains("--ocr-test") { runOCRTest() }
 else if CommandLine.arguments.contains("--markdown-test") { MainActor.assumeIsolated { Task { @MainActor in await runMarkdownTranslationTests(); runMarkdownDocumentTests(); exit(0) }; dispatchMain() } }
 else if CommandLine.arguments.contains("--long-translation-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runLongTranslationTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--screenshot-overlay-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotOverlayTests(); exit(0) }; app.run() } }
+else if CommandLine.arguments.contains("--retina-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; runRetinaCaptureTest(); app.run() } }
+else if (CommandLine.arguments.contains("--screenshot-overlay-fixture") || Bundle.main.object(forInfoDictionaryKey: "ScreenshotOverlayFixture") as? Bool == true) { MainActor.assumeIsolated { runScreenshotOverlayFixture(); NSApplication.shared.run() } }
 else if CommandLine.arguments.contains("--streaming-display-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runStreamingDisplayTests(); exit(0) }; app.run() } }
 else if CommandLine.arguments.contains("--live-streaming-profile") { Task { @MainActor in exit(await runTranslationConnectionTest(profile: true)) }; dispatchMain() }
 else if CommandLine.arguments.contains("--translation-connection-test") { Task { @MainActor in exit(await runTranslationConnectionTest()) }; dispatchMain() }
