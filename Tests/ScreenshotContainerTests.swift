@@ -21,7 +21,7 @@ func runScreenshotContainerInspection() async {
             if p.scrolls {overflow += 1}
             let viewport = ScreenshotLayout.rect(region.viewport!,in:size)
             if !viewport.insetBy(dx:-0.01,dy:-0.01).contains(p.frame) {escaped += 1}
-            reports.append(["source":key,"value":value,"source_box":NSStringFromRect(ScreenshotLayout.rect(region.bounds,in:size)),"viewport":NSStringFromRect(viewport),"frame":NSStringFromRect(p.frame),"font":p.fontSize,"overflow":p.scrolls])
+            reports.append(["source":key,"value":value,"source_box":NSStringFromRect(ScreenshotLayout.rect(region.bounds,in:size)),"viewport":NSStringFromRect(viewport),"frame":NSStringFromRect(p.frame),"font":p.fontSize,"overflow":p.scrolls,"right_boundary_kind":region.rightBoundaryKind])
         }
         let canvas = ScreenshotCanvasView(image:image,size:size);_ = canvas.update(document:doc,values:values,original:false)
         if let bitmap = canvas.bitmapImageRepForCachingDisplay(in:canvas.bounds) {canvas.cacheDisplay(in:canvas.bounds,to:bitmap);try bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("native-preset.png"))}

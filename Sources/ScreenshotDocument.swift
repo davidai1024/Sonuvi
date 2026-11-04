@@ -42,6 +42,8 @@ struct ScreenshotTextRegion: Identifiable, Equatable {
     // A hard inner viewport, independent of the translated string's length.
     var viewport: CGRect? = nil
     var centeredInViewport = false
+    var centerVerticallyInViewport = false
+    var rightBoundaryKind = "unmeasured"
     var direction: Direction { TextRules.direction(text) }
     var sourceBounds: [CGRect] { lineBounds.isEmpty ? [bounds] : lineBounds }
 }
@@ -376,15 +378,25 @@ enum ScreenshotLayout {
         let preferred = min(64,max(7,min(source.width/max(0.1,units),line*1.25)))
         // Match the source's scale. Small screenshots must not inherit a fixed
         // 9 pt lower bound that is larger than the control itself.
+        // Preserve complete Latin words when they can fit at a readable size;
+        // otherwise NSTextView may split "Translate" despite unused height.
+        let words = text.split(whereSeparator:{!$0.isASCII || (!$0.isLetter && !$0.isNumber)}).map(String.init)
+        let longestWord = words.max {a,b in
+            NSAttributedString(string:a,attributes:[.font:NSFont.systemFont(ofSize:100)]).size().width < NSAttributedString(string:b,attributes:[.font:NSFont.systemFont(ofSize:100)]).size().width
+        } ?? ""
+        func wordWidth(_ font:CGFloat) -> CGFloat {NSAttributedString(string:longestWord,attributes:[.font:NSFont.systemFont(ofSize:font)]).size().width}
+        // Measure at the actual font size: optical sizing is not proportional
+        // to a 100 pt reference, and may otherwise break the final letter off.
+        let keepWord = wordWidth(min(preferred,5.5))+0.5 <= frame.width-2
         var lower = min(preferred,5.5),upper = preferred
         for _ in 0..<10 {
             let middle = (lower+upper)/2
-            if measuredHeight(text,width:max(1,frame.width-2),fontSize:middle)+2 <= frame.height {lower = middle}else{upper = middle}
+            if (!keepWord || wordWidth(middle)+0.5 <= frame.width-2) && measuredHeight(text,width:max(1,frame.width-2),fontSize:middle)+2 <= frame.height {lower = middle}else{upper = middle}
         }
         let content = measuredHeight(text,width:max(1,frame.width-2),fontSize:lower)+2
         let overflow = content > frame.height+0.1
         let height = min(frame.height,ceil(content))
-        let y = region.centeredInViewport ? floor(frame.midY-height/2) : floor(frame.maxY-height)
+        let y = region.centerVerticallyInViewport ? floor(frame.midY-height/2) : floor(frame.maxY-height)
         return ScreenshotTextPlacement(frame:CGRect(x:frame.minX,y:max(frame.minY,y),width:frame.width,height:height),fontSize:lower,contentHeight:content,scrolls:overflow,alignment:region.centeredInViewport ? .center : .left,textInset:1)
     }
     static func toolbarFrame(selection: CGRect, screen: CGRect, size: CGSize) -> CGRect {
