@@ -9,19 +9,19 @@
 一个住在 Mac 菜单栏里的朗读伙伴。<br />
 用本地小模型听英文，用划词与截图翻译读懂它。
 
-![Version](https://img.shields.io/badge/version-0.4.53-36b98a?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.54-36b98a?style=flat-square)
 ![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555?style=flat-square&logo=apple)
 ![Offline voice](https://img.shields.io/badge/英文朗读-本地离线-36b98a?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-555555?style=flat-square)
 
 <!-- sonuvi-download:start -->
-**[下载翻译版 · 17.5 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.53/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463.7 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.53/Sonuvi-Mac-Offline.dmg)**
+**[下载翻译版 · 17.6 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.54/Sonuvi-Mac.dmg)** · **[下载翻译＋朗读版 · 463.7 MB](https://github.com/davidai1024/Sonuvi/releases/download/v0.4.54/Sonuvi-Mac-Offline.dmg)**
 
-Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.53
+Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.54
 
 两个版本功能相同。轻量版未内置朗读模型，可随时在「设置 → 模型」免费下载约 505 MB 的本地语音资源；完整朗读版已内置模型、运行环境和 28 个英文音色，无需另行下载。模型准备好后，英文朗读免费且可离线使用。已有模型会保留，可单独更新。
 
-[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.53)
+[版本与更新说明](https://github.com/davidai1024/Sonuvi/releases/tag/v0.4.54)
 <!-- sonuvi-download:end -->
 
 [官方网站](https://sonuvi.davidai1024.com/) · [使用教程](https://sonuvi.davidai1024.com/learn/) · [28 种音色试听](https://sonuvi.davidai1024.com/learn/voices/) · [English guides](https://sonuvi.davidai1024.com/en/learn/)
@@ -92,7 +92,7 @@ Apple Silicon（M 系列芯片） · macOS 14.0 及以上 · v0.4.53
 | **两种播放位置** | 跨应用操作显示浮条；翻译窗口内发起朗读，直接在窗口底部显示点阵与停止按钮。 |
 | **中英自动互译** | 中文译英文、英文译中文，无需来回切换方向。 |
 | **词典与句子模式** | 单词、短语展示释义、词性、音标和例句；句子展示流式译文。 |
-| **截图翻译** | Retina 原始像素与本机 OCR；最多三组并行翻译，完整区域逐区显示、可直接选取复制，并短时复用进程内译文。简洁原生工具条跟随系统明暗外观，识别控件边界后在内部缩字或换行，保护图标、拆分表格列并保留居中标签；日期与时间保持同一字段；支持对照、复制文字，以及“更多”中的图片复制、固定、拖动、重新框选和窗口查看。 |
+| **截图翻译** | Retina 原始像素与本机 OCR；最多三组并行翻译，完整区域逐区显示、可直接选取复制，并短时复用进程内译文。简洁原生工具条跟随系统明暗外观，按最近的实际边缘、控件、文字和图形确定空间，再按需缩字或换行，保护图标、拆分表格列并保留居中标签；日期与时间保持同一字段；支持对照、复制文字，以及“更多”中的图片复制、固定、拖动、重新框选和窗口查看。 |
 | **系统服务** | 在支持文本服务的应用中，通过右键 → 服务调用翻译和朗读。 |
 | **长文本阅读** | 原文按内容增高，到上限后滚动；向下阅读时保留返回原文入口，滚动条使用细滑块。 |
 | **复制与编辑** | 原文、译文和例句可复制；支持常用键盘编辑操作。 |
