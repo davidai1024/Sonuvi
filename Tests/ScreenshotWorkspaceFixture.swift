@@ -114,8 +114,11 @@ func runScreenshotWorkspaceFixture() {
     item.submenu = submenu; menu.addItem(item); app.mainMenu = menu
     guard let screen = NSScreen.screens.first else { return }
     let diagram = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "diagram"
-    let image = makeScreenshotWorkspaceScene(diagram: diagram)
-    let size = CGSize(width: min(1040, screen.frame.width-120), height: min(650, screen.frame.height-180))
+    let dark = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "dark"
+    let image = dark ? makeScreenshotDarkWorkspaceScene() : makeScreenshotWorkspaceScene(diagram: diagram)
+    let logical = dark ? CGSize(width:1900,height:970) : CGSize(width:1040,height:650)
+    let fit = min(1,min((screen.frame.width-60)/logical.width,(screen.frame.height-100)/logical.height))
+    let size = CGSize(width:logical.width*fit,height:logical.height*fit)
     let rect = CGRect(x: screen.frame.midX-size.width/2, y: screen.frame.midY-size.height/2, width: size.width, height: size.height)
     let context = CGContext(data: nil, width: Int(screen.frame.width*2), height: Int(screen.frame.height*2), bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -128,7 +131,7 @@ func runScreenshotWorkspaceFixture() {
     let snapshot = FrozenCapture(displays: displays)
     let cropped = snapshot.crop(rect)!
     let controller = ScreenshotTranslationController(image: cropped, selection: rect, modelName: "fixture", snapshot: snapshot)
-    controller.model.targetLanguage = diagram ? .chinese : .english
+    controller.model.targetLanguage = diagram || dark ? .chinese : .english
     controller.recognizeOverride = { try await OCRService.recognizeDocument(.image($0), cpuOnly: true) }
     let pairs = [
         "搜索文件、模板、应用": "Search files, templates, apps", "示例文档": "Sample Documents", "快速访问": "Quick Access", "最近修改": "Modified",
@@ -143,8 +146,15 @@ func runScreenshotWorkspaceFixture() {
         "Illustrative test diagram": "合成图示", "synthetic content": "测试内容"
     ]
     controller.sendOverride = { input, _, update in
-        try await Task.sleep(nanoseconds: 180_000_000)
+        let slow = Bundle.main.object(forInfoDictionaryKey:"ScreenshotWorkspaceSlowFixture") as? Bool == true
+        let delay: UInt64 = slow ? (input.contains("Recent") ? 200_000_000 : 12_000_000_000) : 180_000_000
+        try await Task.sleep(nanoseconds:delay)
         var output = input
+        if dark {
+            let map = ScreenshotDarkTranslations
+            for key in map.keys.sorted(by: { $0.count > $1.count }) { output = output.replacingOccurrences(of:key,with:map[key]!,options:.caseInsensitive) }
+            update(output); return output
+        }
         for key in pairs.keys.sorted(by: { $0.count > $1.count }) { output = output.replacingOccurrences(of: key, with: pairs[key]!) }
         // Account for local Vision substitutions in this generated font fixture;
         // production requests use the actual provider, not this replacement map.

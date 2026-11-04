@@ -246,6 +246,12 @@ struct SSEChunk: Decodable {
 }
 
 enum DeepSeekClient {
+    private static let sharedSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60; config.timeoutIntervalForResource = 240
+        config.httpMaximumConnectionsPerHost = 4
+        return URLSession(configuration: config)
+    }()
     static func screenshotRequest(text: String, direction: Direction, model: String, key: String) throws -> URLRequest {
         var request = try self.request(text: text, kind: .sentence, direction: direction, model: model, key: key)
         var body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
@@ -270,11 +276,12 @@ enum DeepSeekClient {
         return req
     }
     static func stream(_ req: URLRequest, configuration: URLSessionConfiguration? = nil, onDelta: @escaping @MainActor (String) -> Void) async throws -> String {
-        let config = configuration ?? URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 240
-        let session = URLSession(configuration: config)
-        defer { session.invalidateAndCancel() }
+        let session: URLSession
+        if let configuration {
+            configuration.timeoutIntervalForRequest = 60; configuration.timeoutIntervalForResource = 240
+            session = URLSession(configuration: configuration)
+        } else { session = sharedSession }
+        defer { if configuration != nil { session.invalidateAndCancel() } }
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
         do { (bytes, response) = try await session.bytes(for: req) }
@@ -282,6 +289,7 @@ enum DeepSeekClient {
             if error.code == .cancelled { throw CancellationError() }
             throw TranslateError.retryable("网络连接失败或超时，请稍后重试。")
         }
+        defer { bytes.task.cancel() } // Cancel only this stream, never its sibling requests.
         guard let http = response as? HTTPURLResponse else { throw TranslateError.message("未收到有效响应。") }
         guard http.statusCode == 200 else {
             switch http.statusCode {

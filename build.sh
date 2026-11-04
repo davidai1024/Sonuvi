@@ -37,7 +37,7 @@ sparkle_dir="$(/usr/bin/python3 Tools/prepare_sparkle.py)"
   -module-cache-path "$PWD/build/module-cache" Sources/*.swift Tests/*.swift \
   -F "$sparkle_dir" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -framework AVFoundation -framework AppKit -framework SwiftUI -framework ApplicationServices \
-  -framework Carbon -framework LocalAuthentication -framework Security -framework NaturalLanguage -framework Vision -framework ServiceManagement -framework CoreText -framework Charts -framework ScreenCaptureKit \
+  -framework Carbon -framework LocalAuthentication -framework Security -framework NaturalLanguage -framework Vision -framework CoreML -framework ServiceManagement -framework CoreText -framework Charts -framework ScreenCaptureKit \
   -o "$app_dir/Contents/MacOS/Sonuvi"
 cp Resources/VoiceCatalog.json Resources/VoicePublicKey.txt "$app_dir/Contents/Resources/"
 cp Resources/English.json "$app_dir/Contents/Resources/"
@@ -71,8 +71,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Sonuvi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.4.50</string>
-<key>CFBundleVersion</key><string>63</string>
+<key>CFBundleShortVersionString</key><string>0.4.51</string>
+<key>CFBundleVersion</key><string>64</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSServices</key><array>
 <dict><key>NSMenuItem</key><dict><key>default</key><string>用 Sonuvi 翻译</string></dict>

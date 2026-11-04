@@ -230,6 +230,7 @@ func runScreenshotOverlayTests() async {
     let nativeBar = ScreenshotWorkspaceToolbar(model: controller.model,languageChanged: {},copy: {},copyImage: {},open: {},reselect: {},retry: {},close: {},settings: {})
     let controls = (nativeBar.subviews.first as? NSStackView)?.arrangedSubviews ?? []
     check(controls.count == 5 && controls.allSatisfy { $0 is NSControl } && nativeBar.material == .popover && nativeBar.appearance == nil, "Five native controls inherit system appearance in a compact material toolbar")
+    checks += await runScreenshotSpeedAndDarkChecks()
     controller.close(); controller.close()
     print("PASS: \(checks) Retina screenshot and in-place translation checks")
 }
