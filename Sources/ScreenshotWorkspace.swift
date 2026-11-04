@@ -20,6 +20,12 @@ enum ScreenshotHandle: Int, CaseIterable {
     }
 }
 enum ScreenshotWorkspaceGeometry {
+    static func cursorRegion(_ rect: CGRect, within bounds: CGRect) -> CGRect? {
+        let clipped = rect.intersection(bounds)
+        guard !clipped.isNull, !clipped.isEmpty,
+              [clipped.minX, clipped.minY, clipped.width, clipped.height].allSatisfy(\.isFinite) else { return nil }
+        return clipped
+    }
     static func edited(_ rect: CGRect, delta: CGSize, handle: ScreenshotHandle?, within limit: CGRect) -> CGRect {
         guard let handle else {
             return CGRect(x: max(limit.minX, min(rect.minX + delta.width, limit.maxX - rect.width)),
@@ -190,11 +196,12 @@ private final class ScreenshotWorkspaceView: NSView {
         return self
     }
     override func resetCursorRects() {
-        if !selectingText { addCursorRect(selection.intersection(bounds), cursor: .openHand) }
+        if !selectingText, let rect = ScreenshotWorkspaceGeometry.cursorRegion(selection, within: bounds) { addCursorRect(rect, cursor: .openHand) }
         for handle in ScreenshotHandle.allCases {
             let p = handle.point(in: selection)
-            addCursorRect(CGRect(x: p.x-7, y: p.y-7, width: 14, height: 14).intersection(bounds),
-                          cursor: [.left, .right].contains(handle) ? .resizeLeftRight : [.top, .bottom].contains(handle) ? .resizeUpDown : .crosshair)
+            if let rect = ScreenshotWorkspaceGeometry.cursorRegion(CGRect(x: p.x-7, y: p.y-7, width: 14, height: 14), within: bounds) {
+                addCursorRect(rect, cursor: [.left, .right].contains(handle) ? .resizeLeftRight : [.top, .bottom].contains(handle) ? .resizeUpDown : .crosshair)
+            }
         }
     }
     override func mouseDown(with event: NSEvent) {

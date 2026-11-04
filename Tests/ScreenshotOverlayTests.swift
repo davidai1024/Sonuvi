@@ -131,6 +131,16 @@ func runScreenshotOverlayTests() async {
     let limit = CGRect(x: -500, y: 0, width: 1000, height: 600)
     let moved = ScreenshotWorkspaceGeometry.edited(moving, delta: CGSize(width: 900, height: -400), handle: nil, within: limit)
     check(moved.size == moving.size && limit.contains(moved), "Dragging a result preserves its size and keeps it inside the captured desktop")
+    let secondaryBounds = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    let offscreenSelection = CGRect(x: -1700, y: 250, width: 1000, height: 600)
+    check(ScreenshotWorkspaceGeometry.cursorRegion(offscreenSelection, within: secondaryBounds) == nil,
+          "A selection on another display must not register a null cursor rectangle with AppKit")
+    check(ScreenshotHandle.allCases.allSatisfy { handle in
+        let p = handle.point(in: offscreenSelection)
+        return ScreenshotWorkspaceGeometry.cursorRegion(CGRect(x: p.x-7, y: p.y-7, width: 14, height: 14), within: secondaryBounds) == nil
+    }, "Off-screen handles never register infinite cursor coordinates")
+    check(ScreenshotWorkspaceGeometry.cursorRegion(CGRect(x: -7, y: 30, width: 14, height: 14), within: secondaryBounds) == CGRect(x: 0, y: 30, width: 7, height: 14),
+          "A handle straddling displays clips its active cursor area to each display")
     for handle in ScreenshotHandle.allCases {
         let resized = ScreenshotWorkspaceGeometry.edited(moving, delta: CGSize(width: -900, height: 900), handle: handle, within: limit)
         check(resized.width >= 24 && resized.height >= 24 && limit.contains(resized), "Every selection handle enforces bounds and prevents inverted rectangles")
