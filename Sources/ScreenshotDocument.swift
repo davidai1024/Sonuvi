@@ -46,7 +46,7 @@ struct ScreenshotDocument {
     let regions: [ScreenshotTextRegion]
     let protectedBounds: [CGRect]
     var text: String { regions.map(\.text).joined(separator: "\n\n") }
-    init(lines: [ScreenshotTextLine], imageSize: CGSize = CGSize(width: 1, height: 1), protectedBounds: [CGRect] = []) {
+    init(lines: [ScreenshotTextLine], imageSize: CGSize = CGSize(width: 1000, height: 1000), protectedBounds: [CGRect] = []) {
         let filtered = ScreenshotTextFilter.separate(lines, imageSize: imageSize)
         self.protectedBounds = protectedBounds + filtered.icons
         let lines = filtered.text
@@ -65,7 +65,7 @@ struct ScreenshotDocument {
                 let height = max(last.bounds.height, line.bounds.height)
                 let overlap = min(block.bounds.maxX, line.bounds.maxX) - max(block.bounds.minX, line.bounds.minX)
                 return gap >= -0.15 * min(last.bounds.height, line.bounds.height) && gap <= height * 0.85
-                    && abs(block.bounds.minX - line.bounds.minX) <= max(0.012, height * 0.5)
+                    && abs(block.bounds.minX - line.bounds.minX) <= max(2 / max(1,imageSize.width), height * imageSize.height / max(1,imageSize.width) * 0.5)
                     && overlap >= min(block.bounds.width, line.bounds.width) * 0.5
                     && line.bounds.height / last.bounds.height >= 0.6 && line.bounds.height / last.bounds.height <= 1.65
                     && max(last.text.count, line.text.count) >= 18
@@ -94,6 +94,31 @@ enum ScreenshotTextFilter {
         return (coloredTile || enclosed || repeatedNumber || (value.count == 1 && value.first.map(iconLike.contains) == true))
             && box.width <= box.height*2.5 && rest.minX-box.maxX > box.height*0.25
     }
+    private static let englishLabels: Set<String> = ["recent","all types","all locations","creator","last modified","new","open","starred","shared","cloud document","cloud documents","personal space","team space","my devices","label","labels","recycle bin","local","desktop","documents","downloads","wechat files","browse","frequently used","sync folder","workbench","wiki","calendar","messages","email","templates","update","me","guest","today","yesterday","最近","所有类型","全部类型","所有位置","文件位置","创建者","最后修改","最近修改","新建","打开","星标","已加星标","共享","已共享","云文档","个人空间","团队空间","我的设备","标签","回收站","本地","桌面","文档","文稿","下载","浏览","工作台","今天","昨天","我"]
+    private static let compactLabels = Set(englishLabels.map { $0.replacingOccurrences(of:" ",with:"") })
+    static func isUILabel(_ body:String) -> Bool {
+        guard body.count <= 80 else { return false }
+        let lower = body.lowercased().trimmingCharacters(in:.whitespacesAndNewlines)
+        return englishLabels.contains(lower) || compactLabels.contains(lower.replacingOccurrences(of:" ",with:""))
+            || lower.hasSuffix(" ai chat") || lower.hasPrefix("search ") && lower.hasSuffix(".")
+            || lower.hasPrefix("all locat") && (lower.hasSuffix("...") || lower.hasSuffix("…"))
+    }
+    static func detachedAdornment(_ token: String, body: String, icon: CGRect, label: CGRect, imageSize: CGSize, coloredTile: Bool = false) -> Bool {
+        let han = body.unicodeScalars.filter { (0x3400...0x9FFF).contains($0.value) }.count
+        let englishUI = isUILabel(body)
+        let nonLatinLetters = token.unicodeScalars.filter { $0.value > 127 && CharacterSet.letters.contains($0) }.count
+        let sidebarIcon = englishUI && icon.midX < 0.25 && nonLatinLetters <= 1
+        let plainWord = token.count > 1 && token.allSatisfy { $0.isASCII && $0.isLetter }
+        let numericMetadata = token.range(of:#"^[0-9.,:/%+\-]+$"#,options:.regularExpression) != nil && (token.count > 2 || !sidebarIcon)
+        let smallUIAffix = token.count <= 6 && !token.isEmpty && !plainWord && !numericMetadata && (han >= 2 && body.count <= 18 || englishUI) && token.unicodeScalars.allSatisfy {
+            sidebarIcon || $0.value < 128 || !CharacterSet.alphanumerics.contains($0) || (0x2460...0x24FF).contains($0.value)
+        }
+        let box = ScreenshotLayout.rect(icon,in: imageSize), rest = ScreenshotLayout.rect(label,in: imageSize)
+        let gap = max(rest.minX-box.maxX,box.minX-rest.maxX)
+        return (smallUIAffix || iconPrefix(token,bounds: icon,label: label,imageSize: imageSize,coloredTile: coloredTile))
+            && box.width <= box.height*3 && gap >= max(1, min(box.height,rest.height)*0.22)
+            && abs(box.midY-rest.midY) < max(box.height,rest.height)*0.6
+    }
     static func separate(_ lines: [ScreenshotTextLine], imageSize: CGSize) -> (text: [ScreenshotTextLine], icons: [CGRect]) {
         var text: [ScreenshotTextLine] = [], icons: [CGRect] = []
         for line in lines {
@@ -102,13 +127,30 @@ enum ScreenshotTextFilter {
             let symbolic = !value.isEmpty && value.unicodeScalars.allSatisfy { scalar in
                 (0xE000...0xF8FF).contains(scalar.value) || (!CharacterSet.letters.contains(scalar) && !CharacterSet.decimalDigits.contains(scalar))
             }
-            let nearLabel = lines.contains { other in
-                let next = ScreenshotLayout.rect(other.bounds, in: imageSize)
-                return other.text.count >= 2 && next.minX >= box.maxX && next.minX-box.maxX < box.height*3.5
-                    && abs(next.midY-box.midY) < max(next.height, box.height)*0.45
-                    && box.width < box.height*1.8
+            if symbolic { icons.append(line.bounds);continue }
+            let count = value.count
+            let composite = count <= 6 && value.contains(where: {!$0.isLetter && !$0.isNumber}) && value.contains(where: \.isLetter)
+            guard count == 1 || composite else { text.append(line);continue }
+            let nearLabel = count == 1 && lines.contains { other in
+                let next = ScreenshotLayout.rect(other.bounds,in:imageSize)
+                return next.minX >= box.maxX && next.minX-box.maxX < box.height*3.5
+                    && abs(next.midY-box.midY) < max(next.height,box.height)*0.45 && box.width < box.height*1.8 && other.text.count >= 2
             }
-            if symbolic || (value.count == 1 && value.first.map(iconLike.contains) == true && nearLabel) { icons.append(line.bounds) }
+            let nearUI = lines.contains { other in
+                let next = ScreenshotLayout.rect(other.bounds,in:imageSize)
+                let gap = max(next.minX-box.maxX,box.minX-next.maxX)
+                return gap >= 0 && gap < max(box.height,next.height)*2 && abs(next.midY-box.midY) < max(box.height,next.height)*0.6
+                    && isUILabel(other.text)
+            }
+            let latinIcon = ["C","Y","V","v","d","G","Q","<",">"].contains(value) && nearUI
+            let sidebarGlyph = count == 1 && !value.allSatisfy(\.isNumber) && line.bounds.midX < 0.25 && nearUI
+            let compositeIcon = composite && lines.contains { other in
+                let next = ScreenshotLayout.rect(other.bounds,in:imageSize)
+                let gap = max(next.minX-box.maxX,box.minX-next.maxX)
+                return gap >= 0 && gap < max(box.height,next.height)*2 && abs(next.midY-box.midY) < max(box.height,next.height)*0.6
+                    && detachedAdornment(value,body:other.text,icon:line.bounds,label:other.bounds,imageSize:imageSize)
+            }
+            if latinIcon || sidebarGlyph || compositeIcon || (count == 1 && value.first.map(iconLike.contains) == true && nearLabel) { icons.append(line.bounds) }
             else { text.append(line) }
         }
         return (text, icons)
@@ -137,47 +179,70 @@ final class ScreenshotLayoutObstacles {
         let offset = ((height-1-max(0,min(height-1,y)))*width+max(0,min(width-1,x)))*4
         return (Int(pixels[offset]),Int(pixels[offset+1]),Int(pixels[offset+2]))
     }
-    func leadingIcon(in normalized: CGRect) -> (icon: CGRect, label: CGRect)? {
+    private func background(in source: CGRect) -> (Int,Int,Int) {
+        var buckets: [Int:Int] = [:]
+        let x0 = Int(floor(source.minX))-3,x1 = Int(ceil(source.maxX))+3,y0 = Int(floor(source.minY))-3,y1 = Int(ceil(source.maxY))+3
+        func add(_ x:Int,_ y:Int) { let c = color(x,y);buckets[(c.0/16)*256+(c.1/16)*16+c.2/16,default:0] += 1 }
+        for y in y0...y1 {
+            if CGFloat(y) < source.minY-1 || CGFloat(y) > source.maxY+1 { for x in x0...x1 { add(x,y) } }
+            else {
+                for x in x0...min(x1,Int(source.minX)-2) { add(x,y) }
+                let start = max(x0,Int(source.maxX)+2)
+                if start <= x1 { for x in start...x1 { add(x,y) } }
+            }
+        }
+        let key = buckets.max(by: {$0.value < $1.value})?.key ?? 4095
+        return ((key/256)*16+8,((key/16)%16)*16+8,(key%16)*16+8)
+    }
+    func tightText(in normalized: CGRect, excluding masks: [CGRect] = []) -> CGRect? {
+        let source = ScreenshotLayout.rect(normalized,in:size).intersection(CGRect(origin:.zero,size:size))
+        guard !source.isNull,!source.isEmpty else { return nil }
+        let bg = background(in:source),blocked = masks.map { ScreenshotLayout.rect($0,in:size) }.filter { $0.intersects(source) }
+        let x0 = max(0,Int(source.minX)),x1 = min(width-1,Int(source.maxX)),y0 = max(0,Int(source.minY)),y1 = min(height-1,Int(source.maxY))
+        var left = x1,right = x0,bottom = y1,top = y0,count = 0
+        for y in y0...y1 { for x in x0...x1 {
+            if !blocked.isEmpty && blocked.contains(where: {$0.contains(CGPoint(x:x,y:y))}) { continue }
+            let c = color(x,y)
+            if max(abs(c.0-bg.0),abs(c.1-bg.1),abs(c.2-bg.2)) > 38 { count += 1;left = min(left,x);right = max(right,x);bottom = min(bottom,y);top = max(top,y) }
+        } }
+        guard count >= 3 else { return nil }
+        return CGRect(x:CGFloat(left)/size.width,y:CGFloat(bottom)/size.height,width:CGFloat(right-left+1)/size.width,height:CGFloat(top-bottom+1)/size.height)
+    }
+    func leadingIcon(in normalized: CGRect) -> (icon: CGRect, label: CGRect)? { affix(in: normalized,trailing: false) }
+    func trailingIcon(in normalized: CGRect) -> (icon: CGRect, label: CGRect)? { affix(in: normalized,trailing: true) }
+    private func affix(in normalized: CGRect, trailing: Bool) -> (icon: CGRect, label: CGRect)? {
         let source = ScreenshotLayout.rect(normalized, in: size).intersection(CGRect(origin: .zero,size: size))
         guard !source.isNull, source.width > source.height*1.5, source.height >= 3 else { return nil }
         let x0 = max(0,Int(source.minX)), x1 = min(width-1,Int(source.maxX)), y0 = max(0,Int(source.minY)), y1 = min(height-1,Int(source.maxY))
-        var histogram: [Int:Int] = [:]
-        for y in y0...y1 { for x in x0...x1 { let c = color(x,y); histogram[(c.0/16)*256+(c.1/16)*16+c.2/16,default:0] += 1 } }
-        let key = histogram.max(by: {$0.value < $1.value})?.key ?? 4095
-        let bg = ((key/256)*16+8,((key/16)%16)*16+8,(key%16)*16+8)
-        func ink(_ x: Int,_ y: Int) -> Bool { let c = color(x,y); return max(abs(c.0-bg.0),abs(c.1-bg.1),abs(c.2-bg.2)) > 38 }
+        func sample(_ x: Int,_ y: Int) -> (Int,Int,Int) { color(trailing ? x0+x1-x : x,y) }
+        let bg = background(in:source)
+        func ink(_ x: Int,_ y: Int) -> Bool { let c = sample(x,y); return max(abs(c.0-bg.0),abs(c.1-bg.1),abs(c.2-bg.2)) > 38 }
         var gapStart: Int?, hasInk = false
+        var result: (icon: CGRect,label: CGRect)?
         for x in x0...min(x1, x0+Int(source.height*2.5)) {
             let occupied = (y0...y1).contains { ink(x,$0) }
             if occupied { hasInk = true; gapStart = nil }
             else if hasInk {
                 if gapStart == nil { gapStart = x }
-                if let start = gapStart, CGFloat(x-start+1) >= max(2,source.height*0.22) {
+                if let start = gapStart, x-start+1 == Int(ceil(max(2,source.height*0.22))) {
                     var end = x+1
                     while end <= x1 && !(y0...y1).contains(where: { ink(end,$0) }) { end += 1 }
-                    guard end < x1 else { return nil }
+                    guard end < x1 else { continue }
                     func tight(_ left: Int,_ right: Int) -> CGRect {
                         var low = y1,high = y0
                         for xx in left...right { for yy in y0...y1 where ink(xx,yy) { low = min(low,yy); high = max(high,yy) } }
-                        return CGRect(x: CGFloat(left)/size.width,y: CGFloat(low)/size.height,width: CGFloat(right-left+1)/size.width,height: CGFloat(max(1,high-low+1))/size.height)
+                        return CGRect(x: CGFloat(trailing ? x0+x1-right : left)/size.width,y: CGFloat(low)/size.height,width: CGFloat(right-left+1)/size.width,height: CGFloat(max(1,high-low+1))/size.height)
                     }
-                    return (tight(x0,max(x0,start-1)),tight(end,x1))
+                    result = (tight(x0,max(x0,start-1)),tight(end,x1))
                 }
             }
         }
-        return nil
+        return result
     }
     func limits(source: CGRect, right: CGFloat, bottom: CGFloat) -> (right: CGFloat, bottom: CGFloat) {
         let source = source.intersection(CGRect(origin: .zero, size: size))
         guard !source.isEmpty, !source.isNull else { return (right,bottom) }
-        var histogram: [Int: Int] = [:]
-        for y in stride(from: Int(source.minY), through: Int(source.maxY), by: 2) {
-            for x in stride(from: Int(source.minX), through: Int(source.maxX), by: 2) {
-                let c = color(x,y); histogram[(c.0/16)*256+(c.1/16)*16+c.2/16, default: 0] += 1
-            }
-        }
-        let key = histogram.max(by: { $0.value < $1.value })?.key ?? 4095
-        let bg = ((key/256)*16+8, ((key/16)%16)*16+8, (key%16)*16+8)
+        let bg = background(in:source)
         func different(_ x: Int, _ y: Int) -> Bool {
             let c = color(x,y); return max(abs(c.0-bg.0),abs(c.1-bg.1),abs(c.2-bg.2)) > 38
         }
@@ -208,6 +273,7 @@ struct ScreenshotTextPlacement {
     let fontSize: CGFloat
     let contentHeight: CGFloat
     let scrolls: Bool
+    var alignment: NSTextAlignment = .left
 }
 enum ScreenshotLayout {
     static func rect(_ normalized: CGRect, in size: CGSize) -> CGRect {
@@ -227,15 +293,26 @@ enum ScreenshotLayout {
         guard !original.isNull, original.width > 1, original.height > 1 else {
             return ScreenshotTextPlacement(frame: .zero, fontSize: 9, contentHeight: 0, scrolls: false)
         }
+        // A centered navigation rail has several labels sharing a center but
+        // different widths. Left-aligned sidebar items do not satisfy this test.
+        let centerCandidate = region.bounds.midX*size.width < size.width*0.12 && ScreenshotTextFilter.isUILabel(region.text)
+        let peers = centerCandidate ? regions.filter { other in
+            abs(other.bounds.midX-region.bounds.midX)*size.width < max(2,region.lineHeight*size.height*0.3)
+                && other.lineHeight/region.lineHeight > 0.75 && other.lineHeight/region.lineHeight < 1.3 && ScreenshotTextFilter.isUILabel(other.text)
+        } : []
+        let peerWidths = peers.map { $0.bounds.width*size.width },lefts = peers.map {$0.bounds.minX*size.width},rights = peers.map {$0.bounds.maxX*size.width}
+        let widthSpread = (peerWidths.max() ?? 0)-(peerWidths.min() ?? 0)
+        let centered = peers.count >= 3 && widthSpread > region.lineHeight*size.height*0.75
+            && (lefts.max() ?? 0)-(lefts.min() ?? 0) > widthSpread*0.4 && (rights.max() ?? 0)-(rights.min() ?? 0) > widthSpread*0.4
         let gap: CGFloat = 4, padding: CGFloat = 4, widthPadding: CGFloat = 8
         let neighbors = regions.filter { $0.id != region.id }.map(\.bounds) + protectedBounds
         var right = canvas.maxX, below: CGFloat = 0
+        let source = rect(region.bounds,in:size)
         for bounds in neighbors {
-            let otherRect = rect(bounds, in: size)
-            if otherRect.minX >= original.maxX-1 && min(otherRect.maxY,original.maxY)-max(otherRect.minY,original.minY) > 1 { right = min(right,otherRect.minX-gap) }
-            if otherRect.maxY <= original.minY+1 && min(otherRect.maxX,max(original.maxX,right))-max(otherRect.minX,original.minX) > 1 { below = max(below,otherRect.maxY+gap) }
+            let other = rect(bounds,in:size)
+            if other.minX >= original.maxX-1 && abs(other.midY-original.midY) < max(other.height,original.height)*0.9 { right = min(right,other.minX-gap) }
         }
-        if let limits = obstacles?.limits(source: rect(region.bounds, in: size), right: right, bottom: below) { right = min(right,limits.right); below = max(below,limits.bottom) }
+        if let limits = obstacles?.limits(source:source,right:right,bottom:source.minY) { right = min(right,limits.right) }
         let sourceWidth = region.text.components(separatedBy: .newlines).map {
             NSAttributedString(string: $0, attributes: [.font: NSFont.systemFont(ofSize: 100)]).size().width / 100
         }.max() ?? 1
@@ -244,7 +321,7 @@ enum ScreenshotLayout {
         // does not become a 20 pt English label after translation.
         let fromWidth = region.bounds.width * size.width / max(0.1, sourceWidth)
         let fromHeight = region.lineHeight * size.height * 1.25
-        let preferred = (min(40, max(9, min(fromWidth, fromHeight))) * 2).rounded(.down) / 2
+        let preferred = (min(40, max(9, min(fromWidth, fromHeight * (ScreenshotTextFilter.isUILabel(region.text) ? 1.2 : 1)))) * 2).rounded(.down) / 2
         if original.height <= region.lineHeight * size.height * 1.6 + padding {
             // Short UI labels may need more horizontal space when Chinese
             // becomes English. Stop before other text in the same row.
@@ -254,6 +331,15 @@ enum ScreenshotLayout {
             let extraWidth = min(max(0, right - original.minX), min(max(original.width * 5, preferred * 12), ceil(natural) + widthPadding + 2))
             original.size.width = max(original.width, extraWidth)
         }
+        if centered {
+            let width = min(original.width,(peerWidths.max() ?? original.width)+8)
+            original.origin.x = max(0,source.midX-width/2);original.size.width = width
+        }
+        for bounds in neighbors {
+            let other = rect(bounds,in:size)
+            if other.maxY <= original.minY+1 && min(other.maxX,original.maxX)-max(other.minX,original.minX) > 1 { below = max(below,other.maxY+gap) }
+        }
+        if let limits = obstacles?.limits(source:source,right:original.maxX,bottom:below) { below = max(below,limits.bottom) }
         // Expand down only into empty space, never over the next text block.
         let maximumHeight = max(original.height, min(original.maxY - below, max(original.height * 2, preferred * 2.6 + padding)))
         var lower: CGFloat = min(9, preferred), upper = preferred
@@ -266,7 +352,7 @@ enum ScreenshotLayout {
         let content = measuredHeight(text, width: original.width - widthPadding, fontSize: font) + padding
         let height = max(original.height, min(maximumHeight, content))
         let frame = CGRect(x: floor(original.minX), y: floor(original.maxY - height), width: ceil(original.width), height: ceil(height)).intersection(canvas)
-        return ScreenshotTextPlacement(frame: frame, fontSize: font, contentHeight: content, scrolls: content > frame.height + 0.5)
+        return ScreenshotTextPlacement(frame:frame,fontSize:font,contentHeight:content,scrolls:content > frame.height+0.5,alignment:centered ? .center : .left)
     }
     static func toolbarFrame(selection: CGRect, screen: CGRect, size: CGSize) -> CGRect {
         let x = max(screen.minX + 8, min(selection.midX - size.width / 2, screen.maxX - size.width - 8))

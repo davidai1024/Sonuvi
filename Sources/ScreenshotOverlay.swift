@@ -6,7 +6,6 @@ import SwiftUI
 @MainActor
 final class ScreenshotOverlayModel: ObservableObject {
     @Published var document: ScreenshotDocument?
-    @Published var visible: [Int: String] = [:]
     @Published var completed: [Int: String] = [:]
     @Published var original = false
     @Published var busy = true
@@ -21,7 +20,7 @@ final class ScreenshotOverlayModel: ObservableObject {
     @Published var pinned = false
     @Published var peeking = false
     @Published var editing = false
-    var showsOriginal: Bool { original || peeking || busy || editing }
+    var showsOriginal: Bool { original || peeking || editing }
     var detectedSource: ScreenshotLanguage {
         if sourceLanguage != .automatic { return sourceLanguage }
         let regions = document?.regions.filter { ScreenshotTranslationRules.needsTranslation($0.text) } ?? []
@@ -51,12 +50,17 @@ struct ScreenshotRegionColors {
             context.interpolationQuality = .none; context.draw(cropped, in: CGRect(x: 0, y: 0, width: 32, height: 32))
             let data = bytes.bindMemory(to: UInt8.self)
             var buckets: [Int: (Int, Int, Int, Int)] = [:]
+            var edgeBuckets: [Int: (Int, Int, Int, Int)] = [:]
             for index in stride(from: 0, to: data.count, by: 4) where data[index + 3] > 200 {
                 let r = Int(data[index]), g = Int(data[index + 1]), b = Int(data[index + 2])
                 let key = (r / 32) * 64 + (g / 32) * 8 + b / 32
                 let old = buckets[key] ?? (0,0,0,0); buckets[key] = (old.0 + 1, old.1 + r, old.2 + g, old.3 + b)
+                let x = (index/4)%32,y = (index/4)/32
+                if x < 3 || x >= 29 || y < 3 || y >= 29 {
+                    let edge = edgeBuckets[key] ?? (0,0,0,0);edgeBuckets[key] = (edge.0+1,edge.1+r,edge.2+g,edge.3+b)
+                }
             }
-            guard let best = buckets.values.max(by: { $0.0 < $1.0 }) else { return (1,1,1) }
+            guard let best = (edgeBuckets.isEmpty ? buckets : edgeBuckets).values.max(by: { $0.0 < $1.0 }) else { return (1,1,1) }
             let denominator = CGFloat(best.0) * 255
             var background = (CGFloat(best.1) / denominator, CGFloat(best.2) / denominator, CGFloat(best.3) / denominator)
             let bucket = (Int(background.0 * 255) / 32) * 64 + (Int(background.1 * 255) / 32) * 8 + Int(background.2 * 255) / 32
@@ -100,7 +104,15 @@ enum ScreenshotImageRenderer {
             for box in region.sourceBounds {
                 let rect = ScreenshotLayout.rect(box, in: size).insetBy(dx: -1.5, dy: -1)
                 let color = ScreenshotRegionColors.sample(image: image, rect: rect, size: size)
-                context.setFillColor(color.background.cgColor); context.fill(rect)
+                context.saveGState();context.clip(to:rect)
+                for box in document.protectedBounds {
+                    let protected = ScreenshotLayout.rect(box,in:size).insetBy(dx:-0.5,dy:-0.5)
+                    if protected.intersects(rect) {
+                        let path = CGMutablePath();path.addRect(rect);path.addRect(protected)
+                        context.addPath(path);context.clip(using:.evenOdd)
+                    }
+                }
+                context.setFillColor(color.background.cgColor); context.fill(rect);context.restoreGState()
             }
         }
         return context.makeImage()
@@ -123,7 +135,8 @@ enum ScreenshotImageRenderer {
             guard !placement.scrolls else { return nil } // Do not export clipped translations as a complete image.
             let color = ScreenshotRegionColors.sample(image: image, rect: ScreenshotLayout.rect(region.bounds, in: size).insetBy(dx: -2, dy: -2), size: size)
             context.saveGState(); context.clip(to: placement.frame)
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: placement.fontSize), .foregroundColor: color.foreground]
+            let paragraph = NSMutableParagraphStyle();paragraph.alignment = placement.alignment
+            let attributes: [NSAttributedString.Key: Any] = [.font:NSFont.systemFont(ofSize:placement.fontSize),.foregroundColor:color.foreground,.paragraphStyle:paragraph]
             NSAttributedString(string: text, attributes: attributes).draw(with: placement.frame.insetBy(dx: 2, dy: 2),
                 options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
             context.restoreGState()
@@ -165,11 +178,12 @@ final class ScreenshotCanvasView: NSView {
             guard let value = values[region.id], value != region.text, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 textViews[region.id]?.isHidden = true; continue
             }
-            let placement = ScreenshotLayout.placement(region: region, text: value, regions: document.regions, size: bounds.size, protectedBounds: document.protectedBounds, obstacles: obstacles)
-            overflow = overflow || placement.scrolls
             if let scroll = textViews[region.id], lastText[region.id] == value {
+                overflow = overflow || scroll.hasVerticalScroller
                 scroll.isHidden = original; continue
             }
+            let placement = ScreenshotLayout.placement(region: region, text: value, regions: document.regions, size: bounds.size, protectedBounds: document.protectedBounds, obstacles: obstacles)
+            overflow = overflow || placement.scrolls
             let scroll: NSScrollView
             let text: NSTextView
             if let existing = textViews[region.id], let editor = existing.documentView as? NSTextView { scroll = existing; text = editor }
@@ -191,7 +205,7 @@ final class ScreenshotCanvasView: NSView {
             scroll.frame = placement.frame; scroll.backgroundColor = .clear
             scroll.hasVerticalScroller = placement.scrolls; scroll.isHidden = original
             if let storage = text.textStorage { StreamingTextUpdate.apply(value, to: storage) }
-            text.font = .systemFont(ofSize: placement.fontSize); text.textColor = color.foreground
+            text.font = .systemFont(ofSize:placement.fontSize);text.textColor = color.foreground;text.alignment = placement.alignment
             text.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(placement.frame.height, placement.contentHeight))
             text.textContainer?.containerSize = NSSize(width: max(1, scroll.contentSize.width - 4), height: CGFloat.greatestFiniteMagnitude)
             text.layoutManager?.ensureLayout(for: text.textContainer!)

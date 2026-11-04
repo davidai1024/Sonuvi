@@ -40,6 +40,10 @@ enum ScreenshotWorkspaceGeometry {
     }
 }
 
+private final class ScreenshotBusyIndicator: NSProgressIndicator {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 // AppKit controls inherit the Mac's appearance, contrast, focus and accent color.
 final class ScreenshotWorkspaceToolbar: NSVisualEffectView {
     private let model: ScreenshotOverlayModel
@@ -49,6 +53,7 @@ final class ScreenshotWorkspaceToolbar: NSVisualEffectView {
     private let original = NSButton()
     private let copyButton = NSButton()
     private let more = NSButton()
+    private let progress = ScreenshotBusyIndicator()
     init(model: ScreenshotOverlayModel, languageChanged: @escaping () -> Void,
          copy: @escaping () -> Void, copyImage: @escaping () -> Void, open: @escaping () -> Void,
          reselect: @escaping () -> Void, retry: @escaping () -> Void, close: @escaping () -> Void, settings: @escaping () -> Void) {
@@ -70,6 +75,7 @@ final class ScreenshotWorkspaceToolbar: NSVisualEffectView {
         copyButton.imagePosition = .imageLeading; copyButton.target = self; copyButton.action = #selector(performAction(_:)); copyButton.tag = 0
         more.isBordered = false; more.target = self; more.action = #selector(showMore)
         more.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: L10n.text("更多"))
+        progress.style = .spinning;progress.controlSize = .small;progress.isDisplayedWhenStopped = false;more.addSubview(progress)
         more.imagePosition = .imageOnly; more.toolTip = L10n.text("更多"); more.setAccessibilityLabel(L10n.text("更多"))
         let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.text("关闭截图翻译"))!, target: self, action: #selector(performAction(_:)))
         close.isBordered = false; close.tag = 5; close.toolTip = L10n.text("关闭截图翻译")
@@ -79,11 +85,12 @@ final class ScreenshotWorkspaceToolbar: NSVisualEffectView {
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            language.widthAnchor.constraint(equalToConstant: 110), more.widthAnchor.constraint(equalToConstant: 25), close.widthAnchor.constraint(equalToConstant: 24)])
+            language.widthAnchor.constraint(equalToConstant: 110), more.widthAnchor.constraint(equalToConstant: 25), more.heightAnchor.constraint(equalToConstant:24), close.widthAnchor.constraint(equalToConstant: 24)])
         for button in [original, copyButton, close] { button.controlSize = .small; button.font = .systemFont(ofSize: NSFont.smallSystemFontSize) }
         update()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func layout() { super.layout();progress.frame = CGRect(x:more.bounds.midX-8,y:more.bounds.midY-8,width:16,height:16) }
     @objc private func changeLanguage() { model.targetLanguage = ScreenshotLanguage.allCases[language.indexOfSelectedItem]; languageChanged() }
     @objc private func toggleOriginal() { model.original.toggle() }
     @objc private func performAction(_ sender: NSControl) { actions[sender.tag]() }
@@ -108,7 +115,10 @@ final class ScreenshotWorkspaceToolbar: NSVisualEffectView {
         item("固定截图", 7, checked: model.pinned); item("拖动模式", 8, checked: !model.selectingText)
         menu.addItem(.separator()); item("重新框选", 3); item("在窗口查看", 2, enabled: model.document != nil)
         if model.needsSettings { item("打开模型设置", 6) } else if !model.error.isEmpty { item("重试", 4) }
-        more.menu = menu; more.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: L10n.text("更多"))
+        more.menu = menu;more.image = model.busy ? nil : NSImage(systemSymbolName:"ellipsis.circle",accessibilityDescription:L10n.text("更多"))
+        if model.busy { progress.startAnimation(nil) } else { progress.stopAnimation(nil) }
+        more.toolTip = model.busy ? L10n.text(model.status) : L10n.text("更多")
+        progress.setAccessibilityLabel(L10n.text(model.status))
     }
 }
 
@@ -183,7 +193,8 @@ private final class ScreenshotWorkspaceView: NSView {
         }
         handles.path = dots
         CATransaction.commit()
-        loading.isHidden = !model.busy && model.error.isEmpty && !model.editing
+        let hasTranslation = model.document?.regions.contains { model.completed[$0.id] != nil && model.completed[$0.id] != $0.text } ?? false
+        loading.isHidden = ((!model.busy || hasTranslation) && model.error.isEmpty && !model.editing)
         status.stringValue = L10n.text(model.error.isEmpty ? (model.editing ? "松开以更新选区" : model.status) : model.error)
         let width = min(max(80, selection.width - 24), 420)
         status.frame = CGRect(x: (selection.width - width) / 2, y: selection.height / 2 - 34, width: width, height: 40)
@@ -250,7 +261,7 @@ final class ScreenshotTranslationController {
     private var recordedCompletion = false
     var onClose: (() -> Void)?
     var onSettings: (() -> Void)?
-    var onCompleted: ((ScreenshotDocument) -> Void)?
+    var onCompleted: ((ScreenshotDocument,Bool) -> Void)?
     var onCopy: (() -> Void)?
     var onOpenWindow: ((ScreenshotDocument, String, Bool) -> Void)?
     // Fixtures can exercise the identical production workspace without credentials or external requests.
@@ -310,7 +321,9 @@ final class ScreenshotTranslationController {
             view.globalFrame = targetFrame
             view.layer?.contents = model.pinned ? nil : view.backdrop
             view.update(selection: selection.offsetBy(dx: -targetFrame.minX, dy: -targetFrame.minY), model: model)
-            overflow = view.canvas.update(document: model.document, values: model.completed, original: model.showsOriginal) || overflow
+            let visible = view.selection.intersects(view.bounds)
+            view.canvas.isHidden = !visible
+            if visible { overflow = view.canvas.update(document: model.document, values: model.completed, original: model.showsOriginal) || overflow }
             if index == host, let toolbar {
                 if toolbar.superview !== view { toolbar.removeFromSuperview(); view.addSubview(toolbar); view.toolbar = toolbar }
                 toolbar.frame = barFrame.offsetBy(dx: -targetFrame.minX, dy: -targetFrame.minY)
@@ -336,14 +349,14 @@ final class ScreenshotTranslationController {
             let aligned = snapshot.alignedRect(captureRect)
             guard let cropped = snapshot.crop(aligned) else { return }
             captureRect = aligned; image = cropped
-            selection.size = aligned.size; model.document = nil; model.completed = [:]; model.visible = [:]; work = nil
+            selection.size = aligned.size; model.document = nil; model.completed = [:]; work = nil
             replaceCanvas(); start()
         }
     }
     private var direction: Direction? {
         model.resolvedTarget.direction
     }
-    func languageChanged() { task?.cancel(); revision = UUID(); work = nil; model.completed = [:]; model.visible = [:]; model.original = false; start() }
+    func languageChanged() { task?.cancel(); revision = UUID(); work = nil; model.completed = [:]; model.original = false; start() }
     private func swapLanguages() {
         let oldTarget = model.resolvedTarget
         let oldSource = model.detectedSource
@@ -361,7 +374,7 @@ final class ScreenshotTranslationController {
                 }
                 self.captureRect = self.snapshot.alignedRect(selected); self.selection = self.captureRect
                 guard let image = self.snapshot.crop(self.captureRect) else { self.refresh(); return }
-                self.image = image; self.model.document = nil; self.model.completed = [:]; self.model.visible = [:]; self.work = nil
+                self.image = image; self.model.document = nil; self.model.completed = [:]; self.work = nil
                 self.replaceCanvas(); self.start(); self.refresh()
             } catch { if !self.closed { self.refresh() } }
         }
@@ -383,7 +396,10 @@ final class ScreenshotTranslationController {
                     self.model.document = document
                 }
                 guard let document = self.model.document else { return }
-                if self.work == nil { self.work = ScreenshotTranslationWork(document: document, direction: self.direction, cache: self.cache) }
+                if self.work == nil {
+                    let shared = ScreenshotTranslationCache.shared.values(document: document,model: self.modelName,direction: self.direction)
+                    self.work = ScreenshotTranslationWork(document: document,direction: self.direction,cache: self.cache.merging(shared) { local,_ in local })
+                }
                 guard let work = self.work else { return }
                 let sender: ScreenshotTranslationWork.Send
                 if work.completed.count == document.regions.count { sender = { text, _, _ in text } }
@@ -396,11 +412,16 @@ final class ScreenshotTranslationController {
                         return try await DeepSeekClient.stream(request, onDelta: update)
                     }
                 }
-                try await work.run(send: sender, onUpdate: { [weak self] values in
-                    guard let self, !self.closed, current == self.revision, !Task.isCancelled else { return }; self.model.visible = values
+                try await work.run(send: sender, onUpdate: { _ in
+                    // Provisional token previews are deliberately not painted over the source.
+                    // Verified region commits below are shown immediately without word-by-word reflow.
                 }, onProgress: { [weak self] done, total, retry in
                     guard let self, !self.closed, current == self.revision, !Task.isCancelled else { return }
                     self.model.status = retry ? "服务繁忙，正在自动重试…" : "正在翻译 \(done)/\(total) 个区域…"
+                }, onCommit: { [weak self] values in
+                    guard let self, !self.closed, current == self.revision, !Task.isCancelled else { return }
+                    self.model.completed = values
+                    ScreenshotTranslationCache.shared.store(document: document,values: values,model: self.modelName,direction: self.direction)
                 })
                 try Task.checkCancellation(); guard current == self.revision else { return }
                 self.model.completed = work.completed; self.model.busy = false
@@ -408,7 +429,7 @@ final class ScreenshotTranslationController {
                 for region in document.regions {
                     if let value = work.completed[region.id] { self.cache[ScreenshotTranslationWork.cacheKey(region.text, direction: self.direction ?? region.direction)] = value }
                 }
-                if !self.recordedCompletion { self.recordedCompletion = true; self.onCompleted?(document) }
+                if !self.recordedCompletion { self.recordedCompletion = true; self.onCompleted?(document,!work.requestedNetwork) }
             } catch is CancellationError { }
             catch {
                 guard !Task.isCancelled, !self.closed, current == self.revision else { return }

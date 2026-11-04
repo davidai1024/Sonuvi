@@ -202,27 +202,22 @@ enum WindowGeometry {
 enum OCRService {
     enum Input { case image(CGImage), file(URL) }
     static func recognize(_ input: Input) async throws -> String { try await recognizeDocument(input).text }
-    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false) async throws -> ScreenshotDocument {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
-        request.usesLanguageCorrection = true
-        if cpuOnly { request.usesCPUOnly = true } // Deterministic OCR fixtures on CI without a Metal device.
+    static func recognizeDocument(_ input: Input, cpuOnly: Bool = false, timing: (@Sendable ([String:Double]) -> Void)? = nil) async throws -> ScreenshotDocument {
+        let cancellation = ScreenshotOCRCancellation()
         let work = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
-            let handler: VNImageRequestHandler
-            switch input {
-            case .image(let image): handler = VNImageRequestHandler(cgImage: image)
-            case .file(let url): handler = VNImageRequestHandler(url: url)
-            }
-            try handler.perform([request])
-            try Task.checkCancellation()
+            let start = ProcessInfo.processInfo.systemUptime
             let image: CGImage?
             switch input {
             case .image(let value): image = value
-            case .file(let url): image = CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+            case .file(let url): image = CGImageSourceCreateWithURL(url as CFURL,nil).flatMap { CGImageSourceCreateImageAtIndex($0,0,nil) }
             }
-            let imageSize = CGSize(width: image?.width ?? 1, height: image?.height ?? 1)
+            guard let image else { throw TranslateError.message("截图图像不可用。") }
+            let prepared = ProcessInfo.processInfo.systemUptime
+            let request = try ScreenshotVisionEngine.perform(image:image,cpuOnly:cpuOnly,cancellation:cancellation)
+            let recognized = ProcessInfo.processInfo.systemUptime
+            try Task.checkCancellation()
+            let imageSize = CGSize(width: image.width,height:image.height)
             var protectedBounds: [CGRect] = []
             var prefixPixels: ScreenshotLayoutObstacles?
             let lines = (request.results ?? []).compactMap { observation -> ScreenshotTextLine? in
@@ -235,44 +230,75 @@ enum OCRService {
             // translation slots, not a sentence to reflow across the whole row.
             let separated = (request.results ?? []).flatMap { observation -> [ScreenshotTextLine] in
                 guard let candidate = observation.topCandidates(1).first else { return [] }
-                var string = candidate.string
+                let raw = candidate.string
+                var string = raw, sourceOffset = 0
                 guard !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
                 var textBounds = observation.boundingBox
-                // Vision sometimes reads a file/sidebar icon and its label as a
-                // single line. Exclude only a separated icon prefix, using its
-                // own character box so the original icon is never painted over.
-                var prefixEnd = string.firstIndex(where: \.isWhitespace)
-                if let first = string.first, ScreenshotTextFilter.iconLike.contains(first) || first.unicodeScalars.allSatisfy({ (0x2460...0x24FF).contains($0.value) || (0x2190...0x21FF).contains($0.value) }) {
-                    prefixEnd = string.index(after: string.startIndex)
-                } else if string.count > 2 {
-                    let firstTwo = String(string.prefix(2))
-                    if firstTwo.allSatisfy(\.isNumber) && Set(firstTwo).count == 1 { prefixEnd = string.index(string.startIndex,offsetBy: 2) }
+                func candidateBox(_ range: Range<String.Index>) -> CGRect? {
+                    let lower = raw.index(raw.startIndex, offsetBy: sourceOffset + string.distance(from: string.startIndex, to: range.lowerBound))
+                    let upper = raw.index(raw.startIndex, offsetBy: sourceOffset + string.distance(from: string.startIndex, to: range.upperBound))
+                    return (try? candidate.boundingBox(for: lower..<upper))?.boundingBox
                 }
-                if let split = prefixEnd, split > string.startIndex {
-                    let prefix = String(string[..<split])
-                    if prefix.count <= 2, let firstBox = try? candidate.boundingBox(for: string.startIndex..<split),
-                       let restStart = string[split...].firstIndex(where: { !$0.isWhitespace }),
-                       let restBox = try? candidate.boundingBox(for: restStart..<string.endIndex) {
-                        var icon = firstBox.boundingBox, rest = restBox.boundingBox
-                        if let image {
-                            if prefixPixels == nil { prefixPixels = ScreenshotLayoutObstacles(image: image,size: imageSize) }
-                            if let split = prefixPixels?.leadingIcon(in: observation.boundingBox) { icon = split.icon; rest = split.label }
+                // Preserve detached icon/shortcut pixels on either side of a UI
+                // label. They do not belong to the label's text or font metrics.
+                for trailing in [false,true] {
+                    guard string.count > 2 else { continue }
+                    var cut: String.Index?
+                    if trailing {
+                        if let space = string.lastIndex(where: \.isWhitespace) { cut = string.index(after: space) }
+                        if let last = string.last, last.isASCII, last.isLetter,
+                           string.dropLast().unicodeScalars.contains(where: { (0x3400...0x9FFF).contains($0.value) }) {
+                            cut = string.index(before: string.endIndex)
                         }
-                        var coloredTile = false
-                        if prefix.count == 1, let first = prefix.first, "PWX".contains(first), let image {
-                            let a = ScreenshotRegionColors.sample(image: image, rect: ScreenshotLayout.rect(icon, in: imageSize).insetBy(dx: -2, dy: -2), size: imageSize).background.usingColorSpace(.sRGB)!
-                            coloredTile = max(a.redComponent,a.greenComponent,a.blueComponent)-min(a.redComponent,a.greenComponent,a.blueComponent) > 0.35
+                    } else {
+                        cut = string.firstIndex(where: \.isWhitespace)
+                        if let first = string.first, ScreenshotTextFilter.iconLike.contains(first) || !first.isLetter && !first.isNumber {
+                            if cut == nil || string.distance(from:string.startIndex,to:cut!) > 3 { cut = string.index(after:string.startIndex) }
                         }
-                        if ScreenshotTextFilter.iconPrefix(prefix,bounds: icon,label: rest,imageSize: imageSize,coloredTile: coloredTile) {
-                            protectedBounds.append(icon); string = String(string[restStart...]); textBounds = rest
+                        if let han = string.firstIndex(where: { $0.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) } }),
+                           string.distance(from:string.startIndex,to:han) <= 3, han > string.startIndex { cut = han }
+                        if string.count > 2 {
+                            let pair = String(string.prefix(2))
+                            if pair.allSatisfy(\.isNumber) && Set(pair).count == 1 { cut = string.index(string.startIndex,offsetBy:2) }
                         }
                     }
-                }
-                let offset = candidate.string.count-string.count
-                func candidateBox(_ range: Range<String.Index>) -> CGRect? {
-                    let lower = candidate.string.index(candidate.string.startIndex, offsetBy: offset + string.distance(from: string.startIndex, to: range.lowerBound))
-                    let upper = candidate.string.index(candidate.string.startIndex, offsetBy: offset + string.distance(from: string.startIndex, to: range.upperBound))
-                    return (try? candidate.boundingBox(for: lower..<upper))?.boundingBox
+                    for length in 1...min(6,string.count-2) {
+                        let body = trailing ? String(string.dropLast(length)) : String(string.dropFirst(length))
+                        if ScreenshotTextFilter.isUILabel(body.trimmingCharacters(in:.whitespacesAndNewlines)) {
+                            cut = trailing ? string.index(string.endIndex,offsetBy:-length) : string.index(string.startIndex,offsetBy:length)
+                            break
+                        }
+                    }
+                    guard let cut, cut > string.startIndex, cut < string.endIndex else { continue }
+                    let tokenRange = trailing ? cut..<string.endIndex : string.startIndex..<cut
+                    let bodyRange = trailing ? string.startIndex..<cut : cut..<string.endIndex
+                    let token = String(string[tokenRange]).trimmingCharacters(in:.whitespacesAndNewlines)
+                    let body = String(string[bodyRange]).trimmingCharacters(in:.whitespacesAndNewlines)
+                    guard !token.isEmpty, token.count <= 6, body.count >= 2,
+                          let first = candidateBox(tokenRange), let rest = candidateBox(bodyRange) else { continue }
+                    let oldIcon = token.count == 1 && token.first.map(ScreenshotTextFilter.iconLike.contains) == true
+                    let enclosed = token.unicodeScalars.allSatisfy { (0x2460...0x24FF).contains($0.value) || (0x2190...0x21FF).contains($0.value) }
+                    let fileTile = !trailing && token.count == 1 && "PWX".contains(token)
+                    // Most ordinary words never need an image scan.
+                    let nominalIcon = CGRect(x:0,y:0,width:0.02,height:0.03), nominalLabel = CGRect(x:0.04,y:0,width:0.2,height:0.03)
+                    let uiAffix = ScreenshotTextFilter.detachedAdornment(token,body:body,icon:nominalIcon,label:nominalLabel,imageSize:CGSize(width:1000,height:1000))
+                    guard oldIcon || enclosed || fileTile || uiAffix else { continue }
+                    var icon = first, label = rest
+                    do {
+                        if prefixPixels == nil { prefixPixels = ScreenshotLayoutObstacles(image:image,size:imageSize) }
+                        if let split = trailing ? prefixPixels?.trailingIcon(in:textBounds) : prefixPixels?.leadingIcon(in:textBounds) { icon = split.icon; label = split.label }
+                    }
+                    var coloredTile = false
+                    if fileTile, let color = ScreenshotRegionColors.sample(image:image,rect:ScreenshotLayout.rect(icon,in:imageSize).insetBy(dx:-2,dy:-2),size:imageSize).background.usingColorSpace(.sRGB) {
+                        coloredTile = max(color.redComponent,color.greenComponent,color.blueComponent)-min(color.redComponent,color.greenComponent,color.blueComponent) > 0.35
+                    }
+                    guard ScreenshotTextFilter.detachedAdornment(token,body:body,icon:icon,label:label,imageSize:imageSize,coloredTile:coloredTile)
+                          || ScreenshotTextFilter.iconPrefix(token,bounds:icon,label:label,imageSize:imageSize,coloredTile:coloredTile) else { continue }
+                    protectedBounds.append(icon)
+                    let trimmedStart = string[bodyRange].firstIndex(where: { !$0.isWhitespace })!
+                    let trimmedEnd = string[bodyRange].lastIndex(where: { !$0.isWhitespace }).map { string.index(after:$0) }!
+                    sourceOffset += string.distance(from:string.startIndex,to:trimmedStart)
+                    string = String(string[trimmedStart..<trimmedEnd]); textBounds = label
                 }
                 var words: [(Range<String.Index>, CGRect)] = []
                 string.enumerateSubstrings(in: string.startIndex..<string.endIndex, options: .byWords) { _, range, _, _ in
@@ -281,23 +307,52 @@ enum OCRService {
                 guard words.count > 1 else { return [ScreenshotTextLine(text: string, bounds: textBounds, confidence: candidate.confidence)] }
                 var cuts: [String.Index] = [string.startIndex]
                 for index in 1..<words.count {
-                    if words[index].1.minX - words[index-1].1.maxX > max(observation.boundingBox.height * 1.45, 0.009) {
+                    let previous = String(string[words[index-1].0]), next = String(string[words[index].0])
+                    let uiLanguageBoundary = TextRules.direction(previous) != TextRules.direction(next) && (ScreenshotTextFilter.isUILabel(previous) || ScreenshotTextFilter.isUILabel(next))
+                    let prefix = String(string[..<words[index].0.lowerBound]).trimmingCharacters(in:.whitespacesAndNewlines)
+                    let suffix = String(string[words[index].0.lowerBound...]).trimmingCharacters(in:.whitespacesAndNewlines)
+                    let cellBoundary = ScreenshotTextFilter.isUILabel(prefix) && ScreenshotTextFilter.isUILabel(suffix)
+                    if cellBoundary || uiLanguageBoundary || (words[index].1.minX - words[index-1].1.maxX) * imageSize.width > max(textBounds.height * imageSize.height * 0.85, 4) {
                         cuts.append(words[index].0.lowerBound)
                     }
                 }
-                guard cuts.count > 1 else { return [ScreenshotTextLine(text: string, bounds: textBounds, confidence: candidate.confidence)] }
+                let noise = Set(["C","Y","V","v","d","G","Q","<",">"])
+                for (index,word) in words.enumerated() where noise.contains(String(string[word.0])) {
+                    let prefix = String(string[..<word.0.lowerBound]).trimmingCharacters(in:.whitespacesAndNewlines)
+                    let suffix = String(string[word.0.upperBound...]).trimmingCharacters(in:.whitespacesAndNewlines)
+                    let neighborUI = ScreenshotTextFilter.isUILabel(prefix) || ScreenshotTextFilter.isUILabel(suffix)
+                        || index > 0 && ScreenshotTextFilter.isUILabel(String(string[words[index-1].0]))
+                        || index+1 < words.count && ScreenshotTextFilter.isUILabel(String(string[words[index+1].0]))
+                    if neighborUI { cuts.append(word.0.lowerBound);if index+1 < words.count { cuts.append(words[index+1].0.lowerBound) } }
+                }
+                cuts = Array(Set(cuts)).sorted()
+                guard cuts.count > 1 else { return [ScreenshotTextLine(text:string,bounds:textBounds,confidence:candidate.confidence)] }
                 cuts.append(string.endIndex)
                 return (0..<cuts.count-1).compactMap { index in
                     let range = cuts[index]..<cuts[index+1]
                     let text = String(string[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty, let box = candidateBox(range) else { return nil }
-                    return ScreenshotTextLine(text: text, bounds: box, confidence: candidate.confidence)
+                    guard !text.isEmpty, var box = candidateBox(range) else { return nil }
+                    if ScreenshotTextFilter.isUILabel(text) || noise.contains(text) {
+                        let boxes = words.filter { range.contains($0.0.lowerBound) }.map(\.1)
+                        if !boxes.isEmpty { box = boxes.reduce(CGRect.null) { $0.union($1) } }
+                    }
+                    return ScreenshotTextLine(text:text,bounds:box,confidence:candidate.confidence)
                 }
             }
-            return ScreenshotDocument(lines: separated.isEmpty ? lines : separated, imageSize: imageSize, protectedBounds: protectedBounds)
+            let initial = ScreenshotTextFilter.separate(separated.isEmpty ? lines : separated,imageSize:imageSize)
+            protectedBounds += initial.icons
+            let refined = initial.text.map { line -> ScreenshotTextLine in
+                guard ScreenshotTextFilter.isUILabel(line.text) else { return line }
+                if prefixPixels == nil { prefixPixels = ScreenshotLayoutObstacles(image:image,size:imageSize) }
+                guard let bounds = prefixPixels?.tightText(in:line.bounds,excluding:protectedBounds) else { return line }
+                return ScreenshotTextLine(text:line.text,bounds:bounds,confidence:line.confidence)
+            }
+            let document = ScreenshotDocument(lines:refined,imageSize:imageSize,protectedBounds:protectedBounds)
+            timing?(["prepare_seconds":prepared-start,"vision_seconds":recognized-prepared,"geometry_seconds":ProcessInfo.processInfo.systemUptime-recognized])
+            return document
         }
         return try await withTaskCancellationHandler(operation: { try await work.value },
-                                                      onCancel: { request.cancel(); work.cancel() })
+                                                      onCancel: { cancellation.cancel();work.cancel() })
     }
     static func recognize(_ url: URL) async throws -> String { try await recognize(.file(url)) }
 
