@@ -44,6 +44,7 @@ struct ScreenshotTextRegion: Identifiable, Equatable {
     var centeredInViewport = false
     var centerVerticallyInViewport = false
     var rightBoundaryKind = "unmeasured"
+    var fontLineHeight: CGFloat? = nil
     var direction: Direction { TextRules.direction(text) }
     var sourceBounds: [CGRect] { lineBounds.isEmpty ? [bounds] : lineBounds }
 }
@@ -373,7 +374,7 @@ enum ScreenshotLayout {
         guard !clipped.isNull,clipped.width > 4,clipped.height > 4 else {return ScreenshotTextPlacement(frame:.zero,fontSize:7,contentHeight:0,scrolls:true)}
         // Round inward: outward rounding can cross a one-pixel control border.
         let frame = CGRect(x:ceil(clipped.minX),y:ceil(clipped.minY),width:max(0,floor(clipped.maxX)-ceil(clipped.minX)),height:max(0,floor(clipped.maxY)-ceil(clipped.minY)))
-        let source = rect(region.bounds,in:size),line = region.lineHeight*size.height
+        let source = rect(region.bounds,in:size),line = (region.fontLineHeight ?? region.lineHeight)*size.height
         let units = region.text.components(separatedBy:.newlines).map {NSAttributedString(string:$0,attributes:[.font:NSFont.systemFont(ofSize:100)]).size().width/100}.max() ?? 1
         let preferred = min(64,max(7,min(source.width/max(0.1,units),line*1.25)))
         // Match the source's scale. Small screenshots must not inherit a fixed

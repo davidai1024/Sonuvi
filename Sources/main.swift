@@ -1148,6 +1148,7 @@ else if CommandLine.arguments.contains("--screenshot-overlay-test") || CommandLi
 else if CommandLine.arguments.contains("--screenshot-performance-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotPerformanceTest() }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-container-inspect") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotContainerInspection() }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-local-inspect") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotLocalInspection() }; app.run() } }
+else if CommandLine.arguments.contains("--screenshot-navigation-provider-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotNavigationProviderTest() }; app.run() } }
 else if CommandLine.arguments.contains("--screenshot-provider-test") { MainActor.assumeIsolated { let app = NSApplication.shared; Task { @MainActor in await runScreenshotProviderTest() }; app.run() } }
 else if CommandLine.arguments.contains("--retina-capture-test") { MainActor.assumeIsolated { let app = NSApplication.shared; runRetinaCaptureTest(); app.run() } }
 else if Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceSourceFixture") as? Bool == true { MainActor.assumeIsolated { runScreenshotSourceFixture(); NSApplication.shared.run() } }
