@@ -390,6 +390,18 @@ enum ScreenshotLayout {
         // to a 100 pt reference, and may otherwise break the final letter off.
         let keepWord = wordWidth(min(preferred,5.5))+0.5 <= frame.width-2
         var lower = min(preferred,5.5),upper = preferred
+        // Navigation rows reserve one label line. Prefer a modest reduction
+        // before wrapping into the inter-row space; retain wrapping when a
+        // complete line would need unreadably small type.
+        if region.fontLineHeight != nil,!text.contains("\n") {
+            func singleWidth(_ font:CGFloat) -> CGFloat {NSAttributedString(string:text,attributes:[.font:NSFont.systemFont(ofSize:font)]).size().width}
+            let readable = max(lower,preferred*0.8)
+            if singleWidth(preferred) > frame.width-2,singleWidth(readable)+0.5 <= frame.width-2 {
+                var lo = readable,hi = preferred
+                for _ in 0..<10 {let mid = (lo+hi)/2;if singleWidth(mid)+0.5 <= frame.width-2 {lo = mid}else{hi = mid}}
+                upper = lo
+            }
+        }
         for _ in 0..<10 {
             let middle = (lower+upper)/2
             if (!keepWord || wordWidth(middle)+0.5 <= frame.width-2) && measuredHeight(text,width:max(1,frame.width-2),fontSize:middle)+2 <= frame.height {lower = middle}else{upper = middle}

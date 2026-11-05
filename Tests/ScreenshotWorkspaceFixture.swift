@@ -116,8 +116,9 @@ func runScreenshotWorkspaceFixture() {
     let diagram = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "diagram"
     let dark = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "dark"
     let navigation = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "navigation"
-    let image = navigation ? makeScreenshotNavigationScene() : dark ? makeScreenshotDarkWorkspaceScene() : makeScreenshotWorkspaceScene(diagram: diagram)
-    let logical = navigation ? CGSize(width:263,height:725) : dark ? CGSize(width:1900,height:970) : CGSize(width:1040,height:650)
+    let compact = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "compact-sidebar"
+    let image = compact ? makeScreenshotCompactSidebarScene() : navigation ? makeScreenshotNavigationScene() : dark ? makeScreenshotDarkWorkspaceScene() : makeScreenshotWorkspaceScene(diagram: diagram)
+    let logical = compact ? CGSize(width:176,height:285) : navigation ? CGSize(width:263,height:725) : dark ? CGSize(width:1900,height:970) : CGSize(width:1040,height:650)
     let fit = min(1,min((screen.frame.width-60)/logical.width,(screen.frame.height-100)/logical.height))
     let size = CGSize(width:logical.width*fit,height:logical.height*fit)
     let rect = CGRect(x: screen.frame.midX-size.width/2, y: screen.frame.midY-size.height/2, width: size.width, height: size.height)
@@ -151,8 +152,8 @@ func runScreenshotWorkspaceFixture() {
         let delay: UInt64 = slow ? (input.contains("Recent") ? 200_000_000 : 12_000_000_000) : 180_000_000
         try await Task.sleep(nanoseconds:delay)
         var output = input
-        if dark || navigation {
-            let map = navigation ? ScreenshotNavigationTranslations : ScreenshotDarkTranslations
+        if dark || navigation || compact {
+            let map = compact ? ScreenshotCompactSidebarTranslations : navigation ? ScreenshotNavigationTranslations : ScreenshotDarkTranslations
             for key in map.keys.sorted(by: { $0.count > $1.count }) { output = output.replacingOccurrences(of:key,with:map[key]!,options:.caseInsensitive) }
             update(output); return output
         }

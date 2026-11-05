@@ -18,7 +18,7 @@ final class ScreenshotVisualGeometry {
     private var components:[Component] = []
     private(set) var containers:[ScreenshotVisualContainer] = []
     private var squareColors:[CGRect] = []
-    private var navigationRows:[(icon:CGRect,labelX:CGFloat)] = []
+    private var navigationRows:[(icon:CGRect,label:CGRect)] = []
     init(image:CGImage) {
         let scale = min(1,1280 / CGFloat(max(image.width,image.height)))
         width = max(1,Int(CGFloat(image.width)*scale));height = max(1,Int(CGFloat(image.height)*scale))
@@ -275,7 +275,10 @@ final class ScreenshotVisualGeometry {
     }
     private func rasterRightEdge(source:CGRect,limit:CGFloat) -> CGFloat {
         let lo = max(1,Int(source.minY)),hi = min(height-2,Int(source.maxY))
-        let start = max(2,Int(ceil(source.maxX))+2),end = min(width-3,Int(floor(limit)))
+        // The derivative reads x-2. Tight text boxes omit faint antialiasing
+        // at their edge; leave that pixel behind before scanning for obstacles.
+        // Otherwise the label's own trailing stroke becomes its right border.
+        let start = max(2,Int(ceil(source.maxX))+3),end = min(width-3,Int(floor(limit)))
         guard end >= start,hi >= lo else {return limit}
         // Partial high-contrast strokes stop at graphics/text; full-height
         // low-contrast transitions stop at borders on dark surfaces.
@@ -347,7 +350,7 @@ final class ScreenshotVisualGeometry {
             for i in 1..<groups.count {
                 let icon = groups[..<i].reduce(CGRect.null) {$0.union($1)}
                 let label = groups[i...].reduce(CGRect.null) {$0.union($1)}
-                guard icon.minX < CGFloat(width)*0.2,label.minX-icon.maxX > max(3,label.height*0.6),icon.width/icon.height > 0.55,icon.width/icon.height < 1.65,
+                guard icon.minX < CGFloat(width)*0.2,label.minX-icon.maxX > max(3,label.height*0.3),icon.width/icon.height > 0.55,icon.width/icon.height < 1.65,
                       icon.height > label.height,icon.height < label.height*2,icon.width < label.width*1.5,
                       abs(icon.midY-label.midY) < icon.height*0.3 else {continue}
                 candidates.append(Row(icon:icon,label:label));break
@@ -375,7 +378,7 @@ final class ScreenshotVisualGeometry {
             for candidate in rail {
                 let mask = normalized(candidate.icon.insetBy(dx:-1.5,dy:-1.5))
                 if !masks.contains(where: {$0.intersects(mask)}) {
-                    masks.append(mask);navigationRows.append((mask,candidate.label.minX/CGFloat(width)))
+                    masks.append(mask);navigationRows.append((mask,normalized(candidate.label)))
                 }
             }
         }
@@ -383,9 +386,24 @@ final class ScreenshotVisualGeometry {
     }
     func navigationTextStart(for bounds:CGRect) -> CGFloat? {
         navigationRows.first {row in
-            bounds.maxX > row.labelX && abs(bounds.midY-row.icon.midY) < max(bounds.height,row.icon.height)*0.6
-                && bounds.minX < row.labelX+row.icon.width && bounds.height < row.icon.height*1.8
-        }?.labelX
+            bounds.maxX > row.label.minX && abs(bounds.midY-row.icon.midY) < max(bounds.height,row.icon.height)*0.6
+                && bounds.minX < row.label.minX+row.icon.width && bounds.height < row.icon.height*1.8
+        }?.label.minX
+    }
+    func navigationRowIndex(for bounds:CGRect) -> Int? {
+        navigationRows.firstIndex {row in
+            bounds.maxX > row.icon.minX && bounds.minX < row.label.maxX
+                && abs(bounds.midY-row.icon.midY) < max(bounds.height,row.icon.height)*0.6 && bounds.height < row.icon.height*1.8
+        }
+    }
+    var navigationTextColumns:[CGRect] {
+        var columns:[CGRect] = []
+        for row in navigationRows {
+            if let i = columns.firstIndex(where:{abs($0.minX-row.label.minX)*CGFloat(width) < max(2,row.label.height*CGFloat(height)*0.6)}) {
+                columns[i] = columns[i].union(row.label)
+            } else {columns.append(row.label)}
+        }
+        return columns
     }
     private func inkGroups(in r:CGRect,padding:CGFloat = 0.15) -> [CGRect] {
         let bg = backgroundColor(r),pad = max(0,Int(r.height*padding)),x0 = max(0,Int(r.minX)+pad),x1 = min(width-1,Int(r.maxX)-pad),y0 = max(0,Int(r.minY)+pad),y1 = min(height-1,Int(r.maxY)-pad)

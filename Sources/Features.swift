@@ -220,7 +220,8 @@ enum OCRService {
             let imageSize = CGSize(width: image.width,height:image.height)
             var protectedBounds: [CGRect] = []
             var prefixPixels: ScreenshotLayoutObstacles?
-            let lines = (request.results ?? []).compactMap { observation -> ScreenshotTextLine? in
+            var observations = (request.results ?? []).map {ScreenshotOCRObservation(value:$0)}
+            let lines = observations.compactMap { observation -> ScreenshotTextLine? in
                 guard let candidate = observation.topCandidates(1).first,
                       !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 return ScreenshotTextLine(text: candidate.string, bounds: observation.boundingBox, confidence: candidate.confidence)
@@ -228,10 +229,13 @@ enum OCRService {
             let geometry = ScreenshotVisualGeometry(image:image)
             let semantics = accessibility?.read(lines:lines) ?? (controls:[],graphics:[])
             protectedBounds = geometry.graphics(for:lines) + semantics.graphics
+            let navigationStart = ProcessInfo.processInfo.systemUptime
+            observations = try ScreenshotNavigationRecognition.refine(observations,image:image,geometry:geometry,cpuOnly:cpuOnly,cancellation:cancellation)
+            let navigationSeconds = ProcessInfo.processInfo.systemUptime-navigationStart
             // Modifier-key glyphs are screenshot graphics even when OCR turns
             // an arrow into a letter. Keep the chord's original pixels.
             let chord = try! NSRegularExpression(pattern:#"[⌃⌥⇧⌘^~][^\n]{0,8}(?:Space|Return|Tab|Delete|Esc|F\d{1,2})"#)
-            for observation in request.results ?? [] {
+            for observation in observations {
                 guard let candidate = observation.topCandidates(1).first else {continue}
                 let raw = candidate.string
                 for match in chord.matches(in:raw,range:NSRange(raw.startIndex...,in:raw)) {
@@ -241,7 +245,7 @@ enum OCRService {
             // Vision can place several table cells in one observation. Recover
             // large word gaps before paragraph grouping; columns are separate
             // translation slots, not a sentence to reflow across the whole row.
-            let separated = (request.results ?? []).flatMap { observation -> [ScreenshotTextLine] in
+            let separated = observations.flatMap { observation -> [ScreenshotTextLine] in
                 guard let candidate = observation.topCandidates(1).first else { return [] }
                 let raw = candidate.string
                 // Subtract graphic masks before any text enters the provider.
@@ -252,6 +256,10 @@ enum OCRService {
                     let end = raw.index(after:index)
                     let box = (try? candidate.boundingBox(for:index..<end))?.boundingBox
                     let graphic = box.map { b in
+                        // Vision may recognize a real character without a
+                        // usable per-character box. A crop maps that empty box
+                        // to its origin; it is not evidence of a graphic slot.
+                        guard b.width > 0,b.height > 0 else {return false}
                         // Vision can stretch the final icon character across
                         // the empty icon/label gap. That entire slot precedes
                         // the measured text column, even if overlap is <40%.
@@ -421,7 +429,7 @@ enum OCRService {
                 } else {joined.append(line)}
             }
             let document = geometry.constrain(ScreenshotDocument(lines:joined,imageSize:imageSize,protectedBounds:protectedBounds,grouping:sameStyle),semantic:semantics.controls)
-            timing?(["prepare_seconds":prepared-start,"vision_seconds":recognized-prepared,"geometry_seconds":ProcessInfo.processInfo.systemUptime-recognized])
+            timing?(["prepare_seconds":prepared-start,"vision_seconds":recognized-prepared,"navigation_ocr_seconds":navigationSeconds,"geometry_seconds":ProcessInfo.processInfo.systemUptime-recognized-navigationSeconds])
             return document
         }
         return try await withTaskCancellationHandler(operation: { try await work.value },

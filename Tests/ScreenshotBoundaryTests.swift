@@ -34,6 +34,14 @@ func runScreenshotBoundaryChecks() -> Int {
     check(box(textBound).maxX > (64+240)/2+50,"Available width is not cut at the midpoint between two original strings")
     check(textBound.rightBoundaryKind == "text","Text collision works when no enclosing container is found")
 
+    let antialias = image {c in c.setFillColor(CGColor(gray:0.25,alpha:1));c.fill(CGRect(x:64,y:100,width:1,height:16))}
+    check(abs(box(constrained(antialias)).maxX-638) < 0.1,"Faint antialiasing at the source glyph edge is not an external obstacle")
+    let closeBorder = image {c in
+        c.setFillColor(CGColor(gray:0.25,alpha:1));c.fill(CGRect(x:64,y:100,width:1,height:16))
+        c.setFillColor(CGColor(gray:0.8,alpha:1));c.fill(CGRect(x:70,y:96,width:1,height:24))
+    }
+    check(box(constrained(closeBorder)).maxX <= 70,"Skipping the source fringe still detects a nearby real border")
+
     let control = image {c in c.setFillColor(CGColor(gray:0.26,alpha:1));c.fill(CGRect(x:220,y:94,width:90,height:30))}
     let nextControl = constrained(control)
     check(box(nextControl).maxX >= 214 && box(nextControl).maxX <= 220,"The nearest neighboring control stops expansion")
