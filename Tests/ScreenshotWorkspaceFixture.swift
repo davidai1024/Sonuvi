@@ -115,8 +115,9 @@ func runScreenshotWorkspaceFixture() {
     guard let screen = NSScreen.screens.first else { return }
     let diagram = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "diagram"
     let dark = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "dark"
-    let image = dark ? makeScreenshotDarkWorkspaceScene() : makeScreenshotWorkspaceScene(diagram: diagram)
-    let logical = dark ? CGSize(width:1900,height:970) : CGSize(width:1040,height:650)
+    let navigation = Bundle.main.object(forInfoDictionaryKey: "ScreenshotWorkspaceScene") as? String == "navigation"
+    let image = navigation ? makeScreenshotNavigationScene() : dark ? makeScreenshotDarkWorkspaceScene() : makeScreenshotWorkspaceScene(diagram: diagram)
+    let logical = navigation ? CGSize(width:263,height:725) : dark ? CGSize(width:1900,height:970) : CGSize(width:1040,height:650)
     let fit = min(1,min((screen.frame.width-60)/logical.width,(screen.frame.height-100)/logical.height))
     let size = CGSize(width:logical.width*fit,height:logical.height*fit)
     let rect = CGRect(x: screen.frame.midX-size.width/2, y: screen.frame.midY-size.height/2, width: size.width, height: size.height)
@@ -131,7 +132,7 @@ func runScreenshotWorkspaceFixture() {
     let snapshot = FrozenCapture(displays: displays)
     let cropped = snapshot.crop(rect)!
     let controller = ScreenshotTranslationController(image: cropped, selection: rect, modelName: "fixture", snapshot: snapshot)
-    controller.model.targetLanguage = diagram || dark ? .chinese : .english
+    controller.model.targetLanguage = diagram || dark || navigation ? .chinese : .english
     controller.recognizeOverride = { try await OCRService.recognizeDocument(.image($0), cpuOnly: true) }
     let pairs = [
         "搜索文件、模板、应用": "Search files, templates, apps", "示例文档": "Sample Documents", "快速访问": "Quick Access", "最近修改": "Modified",
@@ -150,8 +151,8 @@ func runScreenshotWorkspaceFixture() {
         let delay: UInt64 = slow ? (input.contains("Recent") ? 200_000_000 : 12_000_000_000) : 180_000_000
         try await Task.sleep(nanoseconds:delay)
         var output = input
-        if dark {
-            let map = ScreenshotDarkTranslations
+        if dark || navigation {
+            let map = navigation ? ScreenshotNavigationTranslations : ScreenshotDarkTranslations
             for key in map.keys.sorted(by: { $0.count > $1.count }) { output = output.replacingOccurrences(of:key,with:map[key]!,options:.caseInsensitive) }
             update(output); return output
         }

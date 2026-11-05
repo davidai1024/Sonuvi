@@ -247,10 +247,16 @@ enum OCRService {
                 // Subtract graphic masks before any text enters the provider.
                 // A single OCR observation can contain both icon and label.
                 var ranges:[Range<String.Index>] = [],run:String.Index?
+                let navigationStart = geometry.navigationTextStart(for:observation.boundingBox)
                 for index in raw.indices {
                     let end = raw.index(after:index)
                     let box = (try? candidate.boundingBox(for:index..<end))?.boundingBox
-                    let graphic = box.map { b in protectedBounds.contains { mask in
+                    let graphic = box.map { b in
+                        // Vision can stretch the final icon character across
+                        // the empty icon/label gap. That entire slot precedes
+                        // the measured text column, even if overlap is <40%.
+                        if let start = navigationStart,b.maxX < start-1/imageSize.width {return true}
+                        return protectedBounds.contains { mask in
                         let overlap = mask.intersection(b)
                         return !overlap.isNull && overlap.width*overlap.height >= b.width*b.height*0.4
                     }} ?? false
@@ -294,7 +300,13 @@ enum OCRService {
                     for length in 1...min(6,string.count-2) {
                         let body = trailing ? String(string.dropLast(length)) : String(string.dropFirst(length))
                         if ScreenshotTextFilter.isUILabel(body.trimmingCharacters(in:.whitespacesAndNewlines)) {
-                            cut = trailing ? string.index(string.endIndex,offsetBy:-length) : string.index(string.startIndex,offsetBy:length)
+                            let boundary = trailing ? string.index(string.endIndex,offsetBy:-length) : string.index(string.startIndex,offsetBy:length)
+                            // A recognized suffix is not a token boundary:
+                            // "Home" must never become "me", nor "Homepage"
+                            // lose its opening letters because "page" is a label.
+                            let before = string[string.index(before:boundary)],after = string[boundary]
+                            if before.isASCII && before.isLetter && after.isASCII && after.isLetter {continue}
+                            cut = boundary
                             break
                         }
                     }
@@ -376,7 +388,12 @@ enum OCRService {
             let initial = ScreenshotTextFilter.separate(separated,imageSize:imageSize)
             protectedBounds += initial.icons
             let refined = initial.text.map { line -> ScreenshotTextLine in
-                guard ScreenshotTextFilter.isUILabel(line.text) else { return line }
+                let hasGraphic = protectedBounds.contains {mask in
+                    let gap = (line.bounds.minX-mask.maxX)*imageSize.width
+                    return gap > -line.bounds.height*imageSize.height*2 && gap < line.bounds.height*imageSize.height*4
+                        && abs(mask.midY-line.bounds.midY) < max(mask.height,line.bounds.height)*0.6
+                }
+                guard ScreenshotTextFilter.isUILabel(line.text) || hasGraphic else { return line }
                 if prefixPixels == nil { prefixPixels = ScreenshotLayoutObstacles(image:image,size:imageSize) }
                 guard let bounds = prefixPixels?.tightText(in:line.bounds,excluding:protectedBounds) else { return line }
                 return ScreenshotTextLine(text:line.text,bounds:bounds,confidence:line.confidence)

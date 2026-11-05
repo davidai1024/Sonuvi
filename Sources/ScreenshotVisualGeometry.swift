@@ -18,6 +18,7 @@ final class ScreenshotVisualGeometry {
     private var components:[Component] = []
     private(set) var containers:[ScreenshotVisualContainer] = []
     private var squareColors:[CGRect] = []
+    private var navigationRows:[(icon:CGRect,labelX:CGFloat)] = []
     init(image:CGImage) {
         let scale = min(1,1280 / CGFloat(max(image.width,image.height)))
         width = max(1,Int(CGFloat(image.width)*scale));height = max(1,Int(CGFloat(image.height)*scale))
@@ -112,7 +113,7 @@ final class ScreenshotVisualGeometry {
     }
     func graphics(for lines:[ScreenshotTextLine]) -> [CGRect] {
         let heights = lines.map {$0.bounds.height*CGFloat(height)}.sorted(),median = heights.isEmpty ? 12 : heights[heights.count/2]
-        var masks = squareColors.filter { tile in
+        var masks = navigationGraphics(for:lines) + squareColors.filter { tile in
             lines.contains { line in
                 let overlap = tile.intersection(line.bounds)
                 return !overlap.isNull && overlap.width*overlap.height >= line.bounds.width*line.bounds.height*0.8 && tile.height > line.bounds.height*1.15
@@ -172,8 +173,17 @@ final class ScreenshotVisualGeometry {
     func constrain(_ document:ScreenshotDocument, semantic:[ScreenshotVisualContainer] = []) -> ScreenshotDocument {
         func logical(_ r:CGRect) -> CGRect {CGRect(x:r.minX*CGFloat(width),y:r.minY*CGFloat(height),width:r.width*CGFloat(width),height:r.height*CGFloat(height))}
         let canvas = CGRect(x:2,y:2,width:max(1,width-4),height:max(1,height-4))
+        let navigation = document.regions.compactMap {region -> (region:ScreenshotTextRegion,x:CGFloat)? in
+            navigationTextStart(for:region.bounds).map {(region,$0)}
+        }
         let regions = document.regions.map { original -> ScreenshotTextRegion in
             var region = original
+            // Descenders, selected bold labels and misrecognized outlines must
+            // not assign a different font size to every row of one navigation.
+            if let start = navigationTextStart(for:region.bounds) {
+                let heights = navigation.filter {abs($0.x-start)*CGFloat(width) < max(2,region.lineHeight*CGFloat(height)*0.6)}.map {$0.region.lineHeight}.sorted()
+                if heights.count >= 4 {region.fontLineHeight = heights[heights.count/2]}
+            }
             let source = logical(region.bounds),line = region.lineHeight*CGFloat(height)
             let axCandidate = semantic.filter {$0.bounds.contains(CGPoint(x:region.bounds.midX,y:region.bounds.midY))}.min {$0.bounds.width*$0.bounds.height < $1.bounds.width*$1.bounds.height}
             // Some apps expose only the label's accessibility hit frame. That
@@ -317,8 +327,68 @@ final class ScreenshotVisualGeometry {
         for y in max(0,Int(r.minY))...min(height-1,Int(r.maxY)) {for x in max(0,Int(r.minX))...min(width-1,Int(r.maxX)) {total += 1;if distance(color(x,y),background) > 38 {ink += 1}}}
         return CGFloat(ink)/CGFloat(max(1,total))
     }
-    private func inkGroups(in r:CGRect) -> [CGRect] {
-        let bg = backgroundColor(r),pad = max(2,Int(r.height*0.15)),x0 = Int(r.minX)+pad,x1 = Int(r.maxX)-pad,y0 = Int(r.minY)+pad,y1 = Int(r.maxY)-pad
+    // Outline navigation icons have no colored tile. Recover a repeated icon
+    // column from pixels even when Vision folds each icon into its label. The
+    // larger-than-text outlines are evidence; repeated letters in table cells
+    // alone are not sufficient. No label vocabulary or OCR glyph is consulted.
+    private func navigationGraphics(for lines:[ScreenshotTextLine]) -> [CGRect] {
+        navigationRows = []
+        struct Row {let icon:CGRect;let label:CGRect}
+        var candidates:[Row] = []
+        for line in lines where line.text.count >= 3 && line.text.count <= 48 {
+            let r = pixelRect(line.bounds)
+            guard r.minX < CGFloat(width)*0.45,r.width > r.height*1.8 else {continue}
+            // The icon may be absent from OCR altogether, or a separate
+            // observation. Inspect the preceding pixels as well as the line.
+            let scanLeft = max(0,r.minX-r.height*3)
+            let expanded = CGRect(x:scanLeft,y:r.minY-r.height*0.4,width:r.maxX+3-scanLeft,height:r.height*1.8).intersection(CGRect(x:0,y:0,width:width,height:height))
+            let groups = inkGroups(in:expanded,padding:0)
+            guard groups.count >= 2 else {continue}
+            for i in 1..<groups.count {
+                let icon = groups[..<i].reduce(CGRect.null) {$0.union($1)}
+                let label = groups[i...].reduce(CGRect.null) {$0.union($1)}
+                guard icon.minX < CGFloat(width)*0.2,label.minX-icon.maxX > max(3,label.height*0.6),icon.width/icon.height > 0.55,icon.width/icon.height < 1.65,
+                      icon.height > label.height,icon.height < label.height*2,icon.width < label.width*1.5,
+                      abs(icon.midY-label.midY) < icon.height*0.3 else {continue}
+                candidates.append(Row(icon:icon,label:label));break
+            }
+        }
+        var masks:[CGRect] = []
+        for row in candidates {
+            let peers = candidates.filter {other in
+                abs(other.label.minX-row.label.minX) < row.label.height*0.35 && abs(other.icon.midX-row.icon.midX) < row.icon.height*0.35
+                    && abs(other.label.midY-row.label.midY) > row.icon.height*1.4
+            }
+            guard peers.count >= 3 else {continue}
+            let rail = peers+[row]
+            guard rail.filter({$0.icon.height > $0.label.height*1.12}).count >= 3 else {continue}
+            // A column of repeated literal values (for example A beside
+            // lowercase descriptions) is not evidence of varied UI graphics.
+            let shapes = Set(rail.map {candidate -> Int in
+                let bg = backgroundColor(candidate.icon.insetBy(dx:-2,dy:-3))
+                return Int((inkDensity(candidate.icon,background:bg)*40).rounded())
+            })
+            guard shapes.count >= 3 else {continue}
+            // A column profile is supporting evidence, not permission to mask
+            // every text line passing through its x coordinates. Every masked
+            // row must independently have the outline and clear pixel gap.
+            for candidate in rail {
+                let mask = normalized(candidate.icon.insetBy(dx:-1.5,dy:-1.5))
+                if !masks.contains(where: {$0.intersects(mask)}) {
+                    masks.append(mask);navigationRows.append((mask,candidate.label.minX/CGFloat(width)))
+                }
+            }
+        }
+        return masks
+    }
+    func navigationTextStart(for bounds:CGRect) -> CGFloat? {
+        navigationRows.first {row in
+            bounds.maxX > row.labelX && abs(bounds.midY-row.icon.midY) < max(bounds.height,row.icon.height)*0.6
+                && bounds.minX < row.labelX+row.icon.width && bounds.height < row.icon.height*1.8
+        }?.labelX
+    }
+    private func inkGroups(in r:CGRect,padding:CGFloat = 0.15) -> [CGRect] {
+        let bg = backgroundColor(r),pad = max(0,Int(r.height*padding)),x0 = max(0,Int(r.minX)+pad),x1 = min(width-1,Int(r.maxX)-pad),y0 = max(0,Int(r.minY)+pad),y1 = min(height-1,Int(r.maxY)-pad)
         guard x1 > x0,y1 > y0 else {return []}
         var groups:[CGRect] = [],start:Int?,last = x0,low = y1,high = y0
         let blank = max(2,Int(ceil(r.height*0.1)))

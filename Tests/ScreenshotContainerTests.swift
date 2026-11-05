@@ -12,10 +12,11 @@ func runScreenshotContainerInspection() async {
         let start = ProcessInfo.processInfo.systemUptime,doc = try await OCRService.recognizeDocument(.image(image),cpuOnly:true)
         let size = CGSize(width:CGFloat(image.width)/2,height:CGFloat(image.height)/2)
         let translations:[String:String] = ["输入":"Input","点语":"Tap to speak","搜索页面":"Search page","工作区":"Workspace","历史":"History","个人词表":"Personal word list","统计":"Statistics","偏好设置":"Preferences","通用":"General","录音":"Recording","快捷键":"Shortcuts","权限":"Permissions","模型":"Model","关于":"About","开始听写":"Start dictation","直接出英文":"Output English directly","不整理":"No organization","轻整理":"Light organization","结构化整理":"Structured organization","管理词表":"Manage word list","最终结果":"Final result","原始识别":"Original recognition","整理结果":"Organized results","复制":"Copy","重新处理":"Reprocess","语音输入":"Voice input","整理程度":"Cleanup level","最近结果":"Recent results","识别模型已就绪":"Recognition model ready","版本 0.1.7":"Version 0.1.7","完全本地":"Fully local","听写 右侧 Option":"Dictation: Right Option","翻译":"Translate","处理 1.79秒":"Process: 1.79 s","10 个启用词条将参与下一次识别":"10 enabled terms will be used in the next recognition.","听写":"Dictation","右侧":"Right","翻译 ^":"Translate ^","处理":"Process","1.79秒":"1.79 s","想法，说出来。":"Say your thoughts out loud.","随时开始一段听写":"Start dictating anytime","用自己的话，把想法自然说出来。":"Say your ideas naturally, in your own words.","在本机识别、整理，再写入当前应用。":"Recognized and organized on this device, then written into the current app.","文本整理自测（不计入输入统计）":"Text cleanup self-test (excluded from statistics)"]
+        let navigation = ScreenshotNavigationTranslations
         var values:[Int:String] = [:],reports:[[String:Any]] = [],overflow = 0,escaped = 0
         for region in doc.regions {
             let key = region.text.trimmingCharacters(in:.whitespacesAndNewlines)
-            let value = translations[key] ?? (TextRules.direction(key) == .toEnglish ? (key.count > 12 ? "Text is recognized and organized on this device, then written into the current application." : "Translated content") : key)
+            let value = navigation[key] ?? translations[key] ?? (TextRules.direction(key) == .toEnglish ? (key.count > 12 ? "Text is recognized and organized on this device, then written into the current application." : "Translated content") : key)
             values[region.id] = value
             let p = ScreenshotLayout.placement(region:region,text:value,regions:doc.regions,size:size,protectedBounds:doc.protectedBounds)
             if p.scrolls {overflow += 1}
