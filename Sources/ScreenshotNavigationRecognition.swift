@@ -27,9 +27,22 @@ struct ScreenshotOCRObservation {
 
 enum ScreenshotNavigationRecognition {
     static func refine(_ original:[ScreenshotOCRObservation],image:CGImage,geometry:ScreenshotVisualGeometry,cpuOnly:Bool,cancellation:ScreenshotOCRCancellation) throws -> [ScreenshotOCRObservation] {
+        // Recover Chinese character boxes without discarding the context of
+        // Latin labels that the whole-image request already recognizes well.
+        // A lone Han glyph hallucinated inside an icon is not a Chinese label.
+        let targets=Set(original.compactMap {observation -> Int? in
+            guard let text=observation.topCandidates(1).first?.string,
+                  text.unicodeScalars.filter({(0x3400...0x9FFF).contains($0.value)}).count >= 2 else {return nil}
+            return geometry.navigationRowIndex(for:observation.boundingBox)
+        })
+        guard !targets.isEmpty else {return original}
         var replacement:[ScreenshotOCRObservation] = []
         let w=CGFloat(image.width),h=CGFloat(image.height)
         for column in geometry.navigationTextColumns {
+            guard original.contains(where:{observation in
+                guard let row=geometry.navigationRowIndex(for:observation.boundingBox) else {return false}
+                return targets.contains(row) && observation.boundingBox.intersects(column)
+            }) else {continue}
             try Task.checkCancellation()
             // Crop native pixels without compression or changing the displayed
             // screenshot. The measured gap excludes the original icon pixels.
@@ -51,7 +64,7 @@ enum ScreenshotNavigationRecognition {
             let request=try ScreenshotVisionEngine.perform(image:input,cpuOnly:cpuOnly,cancellation:cancellation)
             for observation in request.results ?? [] {
                 let mapped=ScreenshotOCRObservation(value:observation,imageRect:imageRect)
-                guard geometry.navigationTextStart(for:mapped.boundingBox) != nil else {continue}
+                guard let row=geometry.navigationRowIndex(for:mapped.boundingBox),targets.contains(row),geometry.navigationTextStart(for:mapped.boundingBox) != nil else {continue}
                 replacement.append(mapped)
             }
         }
