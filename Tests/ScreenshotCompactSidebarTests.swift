@@ -13,7 +13,8 @@ func makeScreenshotCompactSidebarScene(scale:Int = 2,dark:Bool = false) -> CGIma
     let symbols=["person","person.badge.checkmark","person.2","person.crop.circle.badge.clock","star","hand.thumbsup","gearshape"]
     for (i,label) in ScreenshotCompactSidebarLabels.enumerated() {
         let y=CGFloat(253-i*40),ink=i == 0 ? NSColor.systemOrange : NSColor(white:dark ? 0.75 : 0.5,alpha:1)
-        let symbol=NSImage(systemSymbolName:symbols[i],accessibilityDescription:nil)!.withSymbolConfiguration(.init(pointSize:22,weight:.regular))!
+        let base=NSImage(systemSymbolName:symbols[i],accessibilityDescription:nil) ?? NSImage(systemSymbolName:"person",accessibilityDescription:nil)!
+        let symbol=base.withSymbolConfiguration(.init(pointSize:22,weight:.regular)) ?? base
         let tinted=NSImage(size:NSSize(width:22,height:22),flipped:false) {r in symbol.draw(in:r);ink.setFill();r.fill(using:.sourceAtop);return true}
         tinted.draw(in:CGRect(x:18,y:y-1,width:22,height:22))
         NSAttributedString(string:label,attributes:[.font:NSFont.systemFont(ofSize:16),.foregroundColor:i == 0 ? .systemOrange : NSColor(white:dark ? 0.85 : 0.22,alpha:1)]).draw(at:CGPoint(x:46,y:y))
